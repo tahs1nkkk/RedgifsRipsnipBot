@@ -2,14 +2,12 @@
  * Tasu Arşiv ön yüzü.
  *
  * Giriş Google ile, Worker tarafında yapılır — bu koda yalnız oturum açmış
- * kullanıcı ulaşır. Açılışta /api/config'ten medya sunucusu adresi + token
- * gelir; kullanıcı hiçbir şey yazmaz.
+ * kullanıcı ulaşır. Her şey aynı köken (Worker) üzerinden gider; oturum çerezi
+ * kendiliğinden taşındığı için istemci hiçbir token tutmaz.
  *
- * İki kaynaktan okur:
- *  - Listeler: bu sitenin kendi /api/lists ucu (Worker → Supabase). Oturum
- *    çerezi yeterli; Bearer da eklenir (uygulamayla aynı uç).
- *  - Medya: PC'deki medya sunucusu (Tailscale Funnel adresi), tarayıcıdan
- *    doğrudan — yükleme ve silme dahil. Token yalnız bu oturum boyunca bellekte.
+ * İki kaynaktan okur, ikisi de bu sitenin kendi uçları:
+ *  - Listeler: /api/lists (Worker → Supabase).
+ *  - Medya: /api/media (Worker → R2). Listeleme, akıtma, yükleme, silme.
  *
  * Bilinçli olarak framework'süz: iki görünümlü kişisel bir site için Next/React
  * bundle'ı taşımak, "en az bağımlılık" kuralının tam tersi olurdu.
@@ -18,9 +16,6 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  // Oturum içi bellek: token/adres /api/config'ten gelir, diske yazılmaz.
-  const store = { token: "", mediaBase: "" };
-  const authHeaders = () => ({ Authorization: `Bearer ${store.token}` });
 
   /* ---------------------------------------------------------------- durum */
 
@@ -76,7 +71,7 @@
   }
 
   function streamURL(name) {
-    return `${store.mediaBase}/files/${encodeURIComponent(name)}?token=${encodeURIComponent(store.token)}`;
+    return `/api/media/${encodeURIComponent(name)}`;
   }
 
   function skeletons(root, count) {
@@ -103,20 +98,11 @@
 
   /* ---------------------------------------------------------------- oturum */
 
-  // Google oturumu Worker'da. Buradan yalnız ayarları çekeriz; çerez süresi
-  // dolmuşsa /api/config 401 döner ve giriş sayfasına gideriz.
+  // Google oturumu Worker'da. /api/config yalnız oturumu yoklar; 401 dönerse
+  // çerez süresi dolmuştur, giriş sayfasına gideriz.
   async function boot() {
     const response = await fetch("/api/config").catch(() => null);
     if (!response || response.status === 401) { location.href = "/auth/login"; return; }
-    if (!response.ok) {
-      show("lists");
-      emptyState($("lists-root"), "Ayarlar alınamadı",
-        `Sunucu ${response.status} döndürdü — ortam değişkenleri ayarlı mı?`);
-      return;
-    }
-    const cfg = await response.json();
-    store.token = cfg.token || "";
-    store.mediaBase = (cfg.mediaBase || "").replace(/\/+$/, "");
     show("lists");
     loadLists();
   }
@@ -169,7 +155,7 @@
 
   async function loadLists() {
     skeletons($("lists-root"), 2);
-    const response = await fetch("/api/lists", { headers: authHeaders() }).catch(() => null);
+    const response = await fetch("/api/lists").catch(() => null);
     if (response && response.status === 401) { location.href = "/auth/login"; return; }
     if (!response || (response.status !== 200 && response.status !== 404)) {
       emptyState($("lists-root"), "Listeler alınamadı",
@@ -231,30 +217,17 @@
   }
 
   async function loadMedia() {
-    if (!store.mediaBase) {
-      $("media-note").hidden = false;
-      $("media-stats").hidden = true;
-      $("media-root").innerHTML = "";
-      return;
-    }
-    $("media-note").hidden = true;
     skeletons($("media-root"), 8);
-    const [filesRes, healthRes] = await Promise.all([
-      fetch(`${store.mediaBase}/files`, { headers: authHeaders() }).catch(() => null),
-      fetch(`${store.mediaBase}/health`, { headers: authHeaders() }).catch(() => null)
-    ]);
-    if (!filesRes || !filesRes.ok) {
+    const response = await fetch("/api/media").catch(() => null);
+    if (response && response.status === 401) { location.href = "/auth/login"; return; }
+    if (!response || !response.ok) {
       $("media-stats").hidden = true;
-      emptyState($("media-root"), "Medya sunucusuna ulaşılamadı",
-        `${filesRes ? "HTTP " + filesRes.status : "Ağ hatası"} — PC açık mı, funnel çalışıyor mu?`);
+      emptyState($("media-root"), "Medya alınamadı",
+        `${response ? "HTTP " + response.status : "Ağ hatası"} — biraz sonra tekrar dene.`);
       return;
     }
-    mediaCache = await filesRes.json();
+    mediaCache = await response.json();
     renderStats();
-    if (healthRes && healthRes.ok) {
-      const health = await healthRes.json();
-      $("stat-free").textContent = health.freeBytes ? bytes(health.freeBytes) : "–";
-    }
     renderMedia();
   }
 
@@ -265,8 +238,7 @@
   function uploadOne(file) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open("PUT", `${store.mediaBase}/files/${encodeURIComponent(file.name)}`);
-      xhr.setRequestHeader("Authorization", `Bearer ${store.token}`);
+      xhr.open("PUT", `/api/media/${encodeURIComponent(file.name)}`);
       xhr.upload.addEventListener("progress", (e) => {
         if (e.lengthComputable) {
           toast(`${file.name}: %${Math.round((e.loaded / e.total) * 100)}`);
@@ -280,10 +252,6 @@
   }
 
   async function uploadFiles(fileList) {
-    if (!store.mediaBase) {
-      toast("Önce medya sunucusu adresi gerekli", "err");
-      return;
-    }
     const files = [...fileList];
     let done = 0;
     for (const file of files) {
@@ -332,10 +300,9 @@
 
   async function deleteViewing() {
     if (!viewing) return;
-    if (!confirm(`"${viewing.name}" sunucudan silinsin mi? Geri alınamaz.`)) return;
-    const response = await fetch(`${store.mediaBase}/files/${encodeURIComponent(viewing.name)}`, {
-      method: "DELETE",
-      headers: authHeaders()
+    if (!confirm(`"${viewing.name}" buluttan silinsin mi? Geri alınamaz.`)) return;
+    const response = await fetch(`/api/media/${encodeURIComponent(viewing.name)}`, {
+      method: "DELETE"
     }).catch(() => null);
     if (response && response.ok) {
       toast("Silindi", "ok");

@@ -47,12 +47,11 @@ final class AppSettings: ObservableObject {
 
     // MARK: Cloud & sync
 
-    /// The PC media server, e.g. https://makine.tailnet.ts.net — empty means
-    /// no cloud: downloads go to Photos regardless of `downloadDestination`.
-    @Published var cloudBaseURL: String { didSet { persist() } }
-    /// The Cloudflare Worker archive site, e.g. https://tasu-arsiv.<hesap>.workers.dev.
-    @Published var syncBaseURL: String { didSet { persist() } }
-    /// One secret unlocks both services. Lives in the Keychain, not defaults.
+    /// The Cloudflare Worker. Archive site, list sync, and R2-backed media all
+    /// live here, e.g. https://tasu-arsiv.<hesap>.workers.dev. Empty means no
+    /// cloud: downloads go to Photos regardless of `downloadDestination`.
+    @Published var archiveURL: String { didSet { persist() } }
+    /// One secret (ARCHIVE_TOKEN) unlocks the app's calls. Lives in the Keychain.
     @Published var sharedToken: String { didSet { KeychainBox.set(sharedToken, for: "sharedToken"); notify() } }
     @Published var downloadDestination: DownloadDestination { didSet { persist() } }
 
@@ -71,8 +70,10 @@ final class AppSettings: ObservableObject {
         searchUsername = defaults.string(forKey: "searchUsername") ?? ""
         searchSubreddit = defaults.string(forKey: "searchSubreddit") ?? ""
         searchProviders = Set(defaults.stringArray(forKey: "searchProviders") ?? ["reddit", "old"])
-        cloudBaseURL = defaults.string(forKey: "cloudBaseURL") ?? ""
-        syncBaseURL = defaults.string(forKey: "syncBaseURL") ?? ""
+        // Eski iki alan (cloudBaseURL/syncBaseURL) tek Worker adresine göçtü.
+        archiveURL = defaults.string(forKey: "archiveURL")
+            ?? defaults.string(forKey: "syncBaseURL")
+            ?? defaults.string(forKey: "cloudBaseURL") ?? ""
         sharedToken = KeychainBox.get("sharedToken") ?? ""
         downloadDestination = DownloadDestination(rawValue: defaults.string(forKey: "downloadDestination") ?? "") ?? .photos
         if let data = defaults.data(forKey: "extraSettings"),
@@ -84,15 +85,15 @@ final class AppSettings: ObservableObject {
         loading = false
     }
 
-    /// True once the media server is reachable in principle; the effective
+    /// True once the Worker is reachable in principle; the effective
     /// destination falls back to Photos while it is not.
     var cloudConfigured: Bool {
-        !cloudBaseURL.trimmingCharacters(in: .whitespaces).isEmpty && !sharedToken.isEmpty
+        !archiveURL.trimmingCharacters(in: .whitespaces).isEmpty && !sharedToken.isEmpty
     }
 
-    var syncConfigured: Bool {
-        !syncBaseURL.trimmingCharacters(in: .whitespaces).isEmpty && !sharedToken.isEmpty
-    }
+    /// Media and list sync share one Worker now, so being configured for one
+    /// means being configured for both.
+    var syncConfigured: Bool { cloudConfigured }
 
     var effectiveDestination: DownloadDestination {
         cloudConfigured ? downloadDestination : .photos
@@ -106,8 +107,7 @@ final class AppSettings: ObservableObject {
         defaults.set(searchUsername, forKey: "searchUsername")
         defaults.set(searchSubreddit, forKey: "searchSubreddit")
         defaults.set(Array(searchProviders), forKey: "searchProviders")
-        defaults.set(cloudBaseURL, forKey: "cloudBaseURL")
-        defaults.set(syncBaseURL, forKey: "syncBaseURL")
+        defaults.set(archiveURL, forKey: "archiveURL")
         defaults.set(downloadDestination.rawValue, forKey: "downloadDestination")
         notify()
     }

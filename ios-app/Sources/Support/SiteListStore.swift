@@ -146,7 +146,7 @@ final class SiteListStore: ObservableObject {
     func syncNow() async {
         let settings = AppSettings.shared
         guard settings.syncConfigured,
-              let base = URL(string: settings.syncBaseURL.trimmingCharacters(in: .whitespaces)) else {
+              let base = URL(string: settings.archiveURL.trimmingCharacters(in: .whitespaces)) else {
             syncState = "Eşitleme ayarlanmamış"
             return
         }

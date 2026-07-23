@@ -31,11 +31,7 @@ struct SettingsScreen: View {
                 }
 
                 Section {
-                    TextField("https://makine.tailnet.ts.net", text: $settings.cloudBaseURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    TextField("https://tasu-arsiv.workers.dev", text: $settings.syncBaseURL)
+                    TextField("https://tasu-arsiv.workers.dev", text: $settings.archiveURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -56,7 +52,7 @@ struct SettingsScreen: View {
                             Text("Bağlantıyı sına")
                         }
                     }
-                    .disabled(testing || (!settings.cloudConfigured && !settings.syncConfigured))
+                    .disabled(testing || !settings.cloudConfigured)
                     if let connectionReport {
                         Text(connectionReport)
                             .font(.system(size: 13))
@@ -65,7 +61,7 @@ struct SettingsScreen: View {
                 } header: {
                     Text("Bulut ve Eşitleme")
                 } footer: {
-                    Text("İlk satır PC'deki medya sunucusu (Tailscale Funnel adresi), ikincisi web arşiv sitesi. Tek gizli anahtar ikisini de açar; anahtar Keychain'de saklanır. Kurulum: depodaki cloud/README.md. Hedef \"Bulut\" iken indirilenler cihazda yer kaplamaz; webm de buluta inebilir.")
+                    Text("Cloudflare Worker adresin — listeler ve medya (R2) buradan gelir. Tek gizli anahtar (ARCHIVE_TOKEN) uygulamayı açar; anahtar Keychain'de saklanır. Kurulum: depodaki cloud/README.md. Hedef \"Bulut\" iken indirilenler cihazda yer kaplamaz; webm de buluta inebilir.")
                 }
 
                 Section {
@@ -128,37 +124,24 @@ struct SettingsScreen: View {
         .animation(.easeOut(duration: 0.12), value: settings.fabSize)
     }
 
+    /// One Worker, one check: listing the media proves the URL, the token, and
+    /// R2 all work at once. The list request also carries the list-sync path, so
+    /// a green result here means both halves of the app are reachable.
     private func testConnection() {
         testing = true
         connectionReport = nil
         Task {
-            var parts: [String] = []
-            if let cloud = CloudClient.fromSettings() {
-                do {
-                    let health = try await cloud.health()
-                    var line = "Medya sunucusu: ✓ (\(health.files) dosya"
-                    if let free = health.freeBytes {
-                        line += ", \(String(format: "%.0f", Double(free) / 1_073_741_824)) GB boş"
-                    }
-                    line += ")"
-                    parts.append(line)
-                } catch {
-                    parts.append("Medya sunucusu: ✗ \(error.localizedDescription)")
-                }
+            guard let cloud = CloudClient.fromSettings() else {
+                connectionReport = "Önce adres ve anahtar gir."
+                testing = false
+                return
             }
-            if settings.syncConfigured,
-               let base = URL(string: settings.syncBaseURL.trimmingCharacters(in: .whitespaces)) {
-                var request = URLRequest(url: base.appendingPathComponent("api/health"))
-                request.setValue("Bearer \(settings.sharedToken)", forHTTPHeaderField: "Authorization")
-                do {
-                    let (_, response) = try await URLSession.shared.data(for: request)
-                    let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    parts.append(code == 200 ? "Web arşivi: ✓" : "Web arşivi: ✗ HTTP \(code)")
-                } catch {
-                    parts.append("Web arşivi: ✗ \(error.localizedDescription)")
-                }
+            do {
+                let files = try await cloud.list()
+                connectionReport = "Bağlantı: ✓ (\(files.count) medya dosyası)"
+            } catch {
+                connectionReport = "Bağlantı: ✗ \(error.localizedDescription)"
             }
-            connectionReport = parts.isEmpty ? "Önce adres ve anahtar gir." : parts.joined(separator: "\n")
             testing = false
         }
     }

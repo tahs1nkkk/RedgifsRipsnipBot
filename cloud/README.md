@@ -1,75 +1,66 @@
 # TasuDownloader bulut katmanı — kurulum
 
-İki parça, ikisi de ₺0:
+Tek parça: her şey Cloudflare'de. Kendi PC'n sunucu **değil**.
 
 | Parça | Nerede çalışır | Ne yapar |
 |---|---|---|
-| `server/` | **Senin PC'n** (bot sunucusuyla aynı makine) | Medya deposu: telefon indirdiklerini buraya yükler, buradan izler. Alan = diskin kadar. |
-| `web/` | **Cloudflare Workers** | Link arşivin: uygulamadaki listeler + medya tarayıcı, her tarayıcıdan. |
+| `web/` (Worker) | **Cloudflare Workers** | Site + API: uygulamadaki listeler, medya tarayıcı, yükleme/silme/izleme. |
+| R2 bucket `tasu-media` | **Cloudflare R2** | Medya deposu. Telefon indirdiklerini buraya yükler, buradan izler. Alan pratikte sınırsız; ilk 10 GB ücretsiz, üstü ~GB başına aylık $0.015 (200 GB ≈ aylık ~$3), **dışa trafik ücretsiz**. |
+
+Medya artık Worker'la aynı köken üzerinden (R2 binding'i) sunulur; ayrı bir
+sunucu, Tailscale ya da PC'nin açık olması gerekmez.
 
 Kim neyle açıyor:
 
-- **Uygulama ve medya sunucusu** — tek gizli anahtar (`ARCHIVE_TOKEN`).
-  Telefon ile PC'n bu anahtarla konuşur.
+- **Uygulama** — tek gizli anahtar (`ARCHIVE_TOKEN`). Telefon Worker ile bu
+  anahtarla konuşur (Bearer başlığı; medya akışında `?token=…`).
 - **Web arşivi (tarayıcı)** — **Google girişi**, sadece
-  `lsatvofficial@gmail.com`. Başka hiç kimse siteyi açamaz. Tarayıcıda
-  anahtar yazman gerekmez; giriş yaptıktan sonra site anahtarı ve PC adresini
-  kendisi alır.
+  `lsatvofficial@gmail.com`. Başka hiç kimse siteyi açamaz. Tarayıcıda anahtar
+  yazman gerekmez; giriş yaptıktan sonra her istek oturum çereziyle yetkilenir.
 
-Önce ortak anahtarı üret (PowerShell):
-
-```powershell
-[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
-```
-
-Çıkan değeri bir yere kopyala — üç yere gireceksin: sunucu config'i (`token`),
-Cloudflare `ARCHIVE_TOKEN` gizlisi, uygulamanın Ayarlar ekranı. Birazdan bir
-de **oturum imza anahtarı** (`SESSION_SECRET`) üreteceksin; aynı komutu tekrar
-çalıştırıp ikinci bir değer al, karıştırma.
-
-## 1) PC medya sunucusu (5 dakika)
+Önce iki rastgele değer üret. **PowerShell 5.1'de** (Windows'un varsayılanı)
+`RandomNumberGenerator.GetBytes()` yoktur; şunu kullan:
 
 ```powershell
-cd C:\Users\lsatv\TasuDownloader\cloud\server
-Copy-Item config.example.json config.json
-notepad config.json
+$b = New-Object byte[] 48; (New-Object System.Security.Cryptography.RNGCryptoServiceProvider).GetBytes($b); [Convert]::ToBase64String($b)
 ```
 
-`config.json` içinde:
-- `token` → ürettiğin anahtar
-- `dir` → medyanın duracağı klasör (örn. `D:/TasuMedia` — bolluğu olan disk)
+Komutu **iki kez** çalıştır, iki ayrı değer al:
+- birincisi **`ARCHIVE_TOKEN`** — Cloudflare gizlisi + uygulamanın Ayarlar ekranı (iki yere aynısı),
+- ikincisi **`SESSION_SECRET`** — oturum çerezini imzalar, sadece Cloudflare'e.
 
-Başlat:
+Karıştırma.
+
+## 1) R2 deposu (5 dakika)
+
+1. Cloudflare paneli → sol menü **R2** → ilk kez açıyorsan **Purchase R2 /
+   ödeme yöntemi ekle**. Kart eklemek zorunlu ama ilk 10 GB ve aylık işlem
+   kotası ücretsiz; ücret ancak deponu doldurdukça (200 GB ≈ ~$3/ay) başlar,
+   dışa trafik hiç ücretlendirilmez.
+2. **Create bucket** → ad **`tasu-media`** (Location: Automatic). Bu ad
+   `web/wrangler.jsonc` içindeki `bucket_name` ile **birebir** aynı olmalı;
+   farklı istiyorsan ikisini de değiştir.
+
+Dilersen panel yerine komutla da açabilirsin:
 
 ```powershell
-node server.js
+cd C:\Users\lsatv\TasuDownloader\cloud\web
+npx wrangler r2 bucket create tasu-media
 ```
 
-`http://localhost:8790` yazısını görünce çalışıyor. Otomatik başlatma için
-`start-server.bat`'a bir kısayol yap ve `shell:startup` klasörüne at
-(Win+R → `shell:startup`).
+`wrangler.jsonc` içindeki binding bucket'ı Worker'a bağlar:
 
-## 2) Tailscale Funnel — sunucuyu internete aç (10 dakika)
-
-Alan adı, port yönlendirme, güvenlik duvarı ayarı **gerekmez**.
-
-1. [tailscale.com/download](https://tailscale.com/download) → Windows'a kur →
-   Google/GitHub hesabıyla giriş yap (ücretsiz).
-2. PowerShell (yönetici):
-
-```powershell
-tailscale funnel --bg 8790
+```jsonc
+"r2_buckets": [
+  { "binding": "MEDIA", "bucket_name": "tasu-media" }
+]
 ```
 
-3. `tailscale funnel status` sana `https://<makine-adın>.<tailnet>.ts.net`
-   biçiminde bir adres verir. **Bu adres medya sunucunun internet adresi** —
-   uygulamaya ve web arşivine bunu gireceksin. Sabittir, PC yeniden başlasa da
-   değişmez (`--bg` kalıcıdır).
+Yani Worker `env.MEDIA` ile depoya erişir — **ayrı bir gizli/adres yok**,
+deploy bağlamayı kendisi yapar. (Bucket önceden var olmalı; `wrangler deploy`
+onu oluşturmaz.)
 
-Telefonda test: Safari'de `https://…ts.net/health?token=ANAHTAR` →
-`{"ok":true,…}` görmelisin.
-
-## 3) Supabase tablosu (2 dakika)
+## 2) Supabase tablosu (2 dakika)
 
 [supabase.com](https://supabase.com) → projen (`jtfynrxryryfjiolyuat`)
 → SQL Editor → `cloud/supabase.sql` içeriğini yapıştır → Run. (İstersen bunun
@@ -80,7 +71,7 @@ yerine yeni ücretsiz bir proje de açabilirsin; SQL aynı, sadece aşağıdaki
 `service_role`** (ya da yeni format `sb_secret_…`). Bunu birazdan Cloudflare'e
 gizli olarak gireceksin, başka hiçbir yere değil.
 
-## 4) Google giriş istemcisi (10 dakika)
+## 3) Google giriş istemcisi (10 dakika)
 
 Siteye sadece senin girebilmen için Google OAuth istemcisi lazım. Ücretsiz.
 
@@ -98,20 +89,21 @@ Siteye sadece senin girebilmen için Google OAuth istemcisi lazım. Ücretsiz.
    - Name: `Tasu Arşiv Worker`.
    - **Authorized redirect URIs → Add URI** →
      `https://tasu-arsiv.<hesap-adın>.workers.dev/auth/callback`
-     (`<hesap-adın>` = Cloudflare'deki workers.dev alt alanın; Bölüm 5'te
+     (`<hesap-adın>` = Cloudflare'deki workers.dev alt alanın; Bölüm 4'te
      Worker'ı deploy edince kesin adresi görürsün — buraya birebir onu yaz,
      sonundaki `/auth/callback` şart).
    - Create → sana bir **Client ID** (`…apps.googleusercontent.com`) ve bir
      **Client secret** (`GOCSPX-…`) verir. İkisini kopyala.
 
-> Redirect URI'yi tam bilmek için önce Bölüm 5'i yapıp Worker'ın adresini
+> Redirect URI'yi tam bilmek için önce Bölüm 4'ü yapıp Worker'ın adresini
 > öğrenmen daha kolay. Sıra: Worker'ı deploy et → adresi al → buraya redirect
 > URI olarak gir → Client ID/secret'ı Cloudflare'e gizli olarak koy.
 
-## 5) Cloudflare Worker sitesi (10 dakika)
+## 4) Cloudflare Worker sitesi (10 dakika)
 
 Site bir **Worker**'dır (Pages değil). `public/` statik dosyalar olarak
-sunulur, `/api/*` ve `/auth/*` istekleri `src/worker.js`'e düşer.
+sunulur, `/api/*` ve `/auth/*` istekleri `src/worker.js`'e düşer, `/api/media/*`
+ise R2'ye.
 
 **Depoyu zaten bağladıysan** yapman gereken tek şey `Path` alanını
 düzeltmek — Worker'ın yapılandırması depo kökünde değil, `cloud/web`
@@ -136,22 +128,24 @@ altında:
 
 | Değişken | Değer |
 |---|---|
-| `ARCHIVE_TOKEN` | ürettiğin ortak anahtar (sunucu + uygulama ile aynı) |
+| `ARCHIVE_TOKEN` | ürettiğin ortak anahtar (uygulama ile aynı) |
 | `SESSION_SECRET` | ikinci ürettiğin rastgele değer (oturum çerezini imzalar) |
 | `GOOGLE_CLIENT_ID` | Google'dan aldığın Client ID (`…apps.googleusercontent.com`) |
 | `GOOGLE_CLIENT_SECRET` | Google'dan aldığın Client secret (`GOCSPX-…`) |
 | `ALLOWED_EMAIL` | `lsatvofficial@gmail.com` (virgülle birden çok da olur) |
-| `MEDIA_BASE` | PC'nin `…ts.net` adresi (Bölüm 2) |
 | `SUPABASE_URL` | `https://jtfynrxryryfjiolyuat.supabase.co` |
 | `SUPABASE_SERVICE_KEY` | Supabase `service_role` (ya da `sb_secret_…`) |
 
+> R2 buraya **girmez** — depo bir gizli değil, `wrangler.jsonc`'daki `MEDIA`
+> binding'idir (Bölüm 1). Paneldeki **Settings → Bindings** altında deploy'dan
+> sonra `MEDIA → tasu-media` bağlamasını görmelisin.
+
 4. **Deployments** sekmesi → **Retry deployment** (ya da yeni bir push).
 5. Adresin: `https://tasu-arsiv.<hesap-adın>.workers.dev`. **Bu adresi al,
-   Bölüm 4'teki redirect URI'nin başına koy** (`…/auth/callback`) — Google
+   Bölüm 3'teki redirect URI'nin başına koy** (`…/auth/callback`) — Google
    tarafı ile Worker adresi birebir aynı olmalı.
 6. Siteyi aç → **Google ile giriş** → `lsatvofficial@gmail.com` seç → içeri
-   girersin. Anahtar/adres yazman gerekmez, site `/api/config`'ten kendisi
-   alır. Başka bir Google hesabıyla girersen "yetkili değil" der.
+   girersin. Başka bir Google hesabıyla girersen "yetkili değil" der.
 
 Sıfırdan kuruyorsan: **Workers & Pages → Create → Workers → Import a
 repository** → `TasuDownloader` → yukarıdaki tabloyu uygula.
@@ -166,41 +160,41 @@ npx wrangler dev
 ```
 
 `http://localhost:8787` gerçek Worker çalışma zamanıdır — `/api/*` ve
-`/auth/*` dahil her şey yayındaki gibi davranır. Yerelde gerçek Google
-girişini denemek için Google istemcisine bir de
-`http://localhost:8787/auth/callback` redirect URI'si eklemen gerekir.
-`.dev.vars` git'e girmez.
+`/auth/*` dahil her şey yayındaki gibi davranır. `wrangler dev` R2 binding'i
+için yerelde otomatik geçici bir depo (`.wrangler/state`) kullanır, gerçek
+bucket'a dokunmaz. Yerelde gerçek Google girişini denemek için Google
+istemcisine bir de `http://localhost:8787/auth/callback` redirect URI'si
+eklemen gerekir. `.dev.vars` git'e girmez.
 
-## 6) Uygulama ayarları (1 dakika)
+## 5) Uygulama ayarları (1 dakika)
 
 Telefonda TasuDownloader → **Ayarlar → Bulut ve Eşitleme**:
 
-- Medya sunucusu: `https://<makine>.<tailnet>.ts.net`
-- Arşiv sitesi: `https://tasu-arsiv.<hesap-adın>.workers.dev`
-- Gizli anahtar: aynı anahtar
-- **Bağlantıyı sına** → iki satır da ✓ olmalı (boş disk alanını da gösterir)
+- Worker adresi: `https://tasu-arsiv.<hesap-adın>.workers.dev`
+- Gizli anahtar: `ARCHIVE_TOKEN` (Cloudflare'e girdiğinle aynı)
+- **Bağlantıyı sına** → ✓ ve medya dosya sayısı gelmeli.
 - "İndirilenler nereye": **Bulut** = cihazda yer kaplamaz; **İkisi** = hem
   Fotoğraflar hem bulut.
 
 ## Nasıl akıyor
 
 ```
-telefon ──indir──▶ uygulama ──PUT /files──▶ PC (Tailscale Funnel, token'lı)
-telefon ──listeler──▶ Worker /api/lists ──(Bearer token)──▶ Supabase (service key sadece Worker'da)
-tarayıcı ──Google giriş──▶ tasu-arsiv.workers.dev ──(oturum çerezi)──▶ listeler + PC'deki medya
+telefon ──indir──▶ Worker /api/media/<ad> (PUT, Bearer token) ──▶ R2 (tasu-media)
+telefon ──izle───▶ Worker /api/media/<ad>?token=… ──▶ R2 (Range destekli akış)
+telefon ──listeler──▶ Worker /api/lists (Bearer) ──▶ Supabase (service key sadece Worker'da)
+tarayıcı ──Google giriş──▶ tasu-arsiv.workers.dev ──(oturum çerezi)──▶ listeler + R2 medyası
 ```
 
 - Web arşivine **sadece** `lsatvofficial@gmail.com` girebilir. Worker giriş
   yapılmamış her isteği Google'a yollar; oturum çerezi olmayan `/api/*` isteği
   401 döner. Uygulama ise çereze değil `ARCHIVE_TOKEN`'a dayanır — bu yüzden
   Google katmanı uygulamayı hiç etkilemez.
-
-- Medya **hiçbir üçüncü tarafa çıkmaz**: telefon ↔ senin PC'n. Tailscale
-  sadece şifreli tünel taşır.
+- Medya ve site aynı köken olduğu için tarayıcıda `<img>`/`<video>` çereze
+  düşer, URL'de token taşınmaz; uygulamada AVPlayer başlık gönderemediği için
+  akış `?token=…` ile yetkilenir. İkisini de Worker kabul eder.
 - Galeri → Seç → **Buluta yükle** ile telefonda önceden inmiş dosyaları da
-  PC'ye atabilirsin.
-- PC kapalıyken medya erişilemez (listeler erişilir — onlar Supabase'de).
-  Bot sunucun zaten 7/24 açık olduğu için pratikte fark etmez.
+  R2'ye atabilirsin.
+- Cloudflare 7/24 açık; PC'nin kapalı olması hiçbir şeyi etkilemez.
 
 ## Sık sorunlar
 
@@ -208,6 +202,14 @@ tarayıcı ──Google giriş──▶ tasu-arsiv.workers.dev ──(oturum çe
   olduğu içindir — `npx wrangler deploy` depo kökünde yapılandırma arar,
   orada yoktur. `cloud/web` yap. İkinci sık neden: paneldeki Worker adı ile
   `wrangler.jsonc` içindeki `name` tutmuyor.
+- **Deploy'da "R2 bucket 'tasu-media' not found":** bucket'ı Bölüm 1'de
+  oluşturmadın ya da adı `wrangler.jsonc`'daki `bucket_name` ile tutmuyor.
+  Panelden ya da `npx wrangler r2 bucket create tasu-media` ile aç.
+- **Medya sekmesi web'de boş ama hata yok:** henüz hiç dosya yüklemedin;
+  telefondan bir indirme yapıp **Bulut**'a düşür ya da Galeri'den **Buluta
+  yükle**.
+- **Yükleme/izleme 401:** `ARCHIVE_TOKEN` gizlisi ile uygulamadaki anahtar
+  aynı değil. İkisini de yeniden gir.
 - **Google girişinde "redirect_uri_mismatch":** Google istemcisindeki
   Authorized redirect URI ile Worker adresin birebir aynı değil. Doğrusu
   `https://tasu-arsiv.<hesap-adın>.workers.dev/auth/callback` — sonunda
@@ -220,8 +222,3 @@ tarayıcı ──Google giriş──▶ tasu-arsiv.workers.dev ──(oturum çe
   `lsatvofficial@gmail.com`'u **test kullanıcısı** olarak eklemedin.
 - **Listeler "alınamadı" diyor:** `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`
   eksik, ya da `cloud/supabase.sql` henüz çalıştırılmamış.
-- **Uygulama "Bulut ✗" diyor:** PC'de `node server.js` çalışıyor mu?
-  `tailscale funnel status` adresi gösteriyor mu? (Uygulama Google'a değil
-  `ARCHIVE_TOKEN`'a bakar.)
-- **Medya sekmesi web'de boş:** `MEDIA_BASE` gizlisi eklenmemiş ya da PC
-  kapalı / `tailscale funnel` düşmüş. Çıkış yapıp tekrar gir.

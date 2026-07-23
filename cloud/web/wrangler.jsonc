@@ -12,10 +12,16 @@
     "binding": "ASSETS"
   },
 
+  // Medya deposu: Cloudflare R2. Panelde bu adla bir kova oluştur:
+  //   R2 -> Create bucket -> tasu-media   (ya da: wrangler r2 bucket create tasu-media)
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "tasu-media" }
+  ],
+
   "observability": {
     "enabled": true
   }
 
-  // ARCHIVE_TOKEN / SUPABASE_URL / SUPABASE_SERVICE_KEY buraya YAZILMAZ.
-  // Panelden Settings -> Variables and Secrets altında secret olarak girilir.
+  // ARCHIVE_TOKEN / SESSION_SECRET / GOOGLE_* / ALLOWED_EMAIL / SUPABASE_* buraya
+  // YAZILMAZ. Panelden Settings -> Variables and Secrets altında secret girilir.
 }

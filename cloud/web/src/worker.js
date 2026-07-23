@@ -13,6 +13,7 @@ import { json } from "../functions/api/_utils.js";
 import * as health from "../functions/api/health.js";
 import * as lists from "../functions/api/lists.js";
 import * as config from "../functions/api/config.js";
+import { handleMedia } from "./media.js";
 import { finishLogin, loginPage, logout, readSession, startLogin } from "./auth.js";
 
 const ROUTES = {
@@ -62,7 +63,13 @@ export default {
     if (path === "/auth/callback") return finishLogin(request, env);
     if (path === "/auth/logout") return logout();
 
-    // 2) API — oturum çerezi ya da Bearer token gerekir.
+    // 2) Medya (R2) — kendi yetki + yöntem yönlendirmesini yapar; akış için
+    //    ?token= de kabul eder (AVPlayer/<video> başlık gönderemez).
+    if (path === "/api/media" || path.startsWith("/api/media/")) {
+      return handleMedia(request, env, url);
+    }
+
+    // 3) API — oturum çerezi ya da Bearer token gerekir.
     const route = ROUTES[path];
     if (route) {
       if (!(await authorized(request, env))) {
@@ -82,7 +89,7 @@ export default {
 
     if (path.startsWith("/api/")) return json({ ok: false, error: "bilinmeyen uç" }, 404);
 
-    // 3) Statik — yalnız giriş yapmış kullanıcıya. Yoksa Google giriş sayfası.
+    // 4) Statik — yalnız giriş yapmış kullanıcıya. Yoksa Google giriş sayfası.
     if (await readSession(request, env)) return env.ASSETS.fetch(request);
     return loginPage();
   }

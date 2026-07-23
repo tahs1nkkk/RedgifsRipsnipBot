@@ -1,12 +1,9 @@
-// Web istemcisine ayarları verir: medya sunucusu adresi + medya token'ı.
-// Böylece Google ile giren kullanıcı hiçbir şey yazmadan medyaya erişir.
-// Yetki denetimi çağırandan önce (worker.js / _middleware) yapılır.
+// Hafif oturum yoklaması. Web istemcisi açılışta bunu çağırır: 200 ise oturum
+// geçerli, 401 ise Google girişine yönlenir. Medya ve listeler aynı Worker'da
+// (aynı köken) olduğundan çerez yeterli — istemciye token/adres verilmez.
+// Yetki denetimi çağırandan önce (worker.js) yapılır.
 import { json } from "./_utils.js";
 
-export function onRequestGet({ env }) {
-  return json({
-    ok: true,
-    token: env.ARCHIVE_TOKEN || "",
-    mediaBase: (env.MEDIA_BASE || "").replace(/\/+$/, "")
-  });
+export function onRequestGet() {
+  return json({ ok: true });
 }

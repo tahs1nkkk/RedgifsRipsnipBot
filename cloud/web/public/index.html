@@ -23,7 +23,7 @@
 
   <main>
     <!-- Giriş, Google ile Worker tarafında yapılır (auth.js). Buraya yalnız
-         oturum açmış kullanıcı ulaşır; ayarlar /api/config'ten gelir. -->
+         oturum açmış kullanıcı ulaşır; her uç aynı köken, çerezle yetkilenir. -->
     <section id="view-lists" hidden aria-label="Listeler">
       <div class="toolbar">
         <input id="lists-search" class="grow" type="search" placeholder="Listelerde ara…" aria-label="Listelerde ara">
@@ -36,7 +36,6 @@
       <div class="stats" id="media-stats" hidden>
         <div class="stat"><b id="stat-count">–</b><span>dosya</span></div>
         <div class="stat"><b id="stat-size">–</b><span>toplam</span></div>
-        <div class="stat"><b id="stat-free">–</b><span>PC'de boş</span></div>
       </div>
 
       <!-- PC'den tam kontrol: sürükle-bırak ya da seçerek yükleme -->
@@ -54,7 +53,6 @@
         <button id="media-sort" class="ghost" aria-label="Sıralamayı değiştir">Yeni → eski</button>
       </div>
 
-      <p id="media-note" class="muted" hidden>Medya sunucusu adresi ayarlı değil. Cloudflare'de <code>MEDIA_BASE</code> değişkenine PC'nin <code>ts.net</code> adresini ekle.</p>
       <div id="media-root" class="media-grid"></div>
     </section>
   </main>

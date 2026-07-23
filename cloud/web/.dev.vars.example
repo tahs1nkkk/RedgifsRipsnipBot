@@ -9,9 +9,9 @@ ALLOWED_EMAIL=lsatvofficial@gmail.com
 # Oturum çerezini imzalayan gizli anahtar (rastgele üret)
 SESSION_SECRET=rastgele-uzun-bir-deger
 
-# Medya + uygulama ortak anahtarı, medya sunucusu adresi
+# Uygulama + medya ortak anahtarı (Bearer / ?token). Medyanın kendisi R2'de:
+# wrangler.jsonc'daki MEDIA binding'i taşır, ayrı bir adres/gizli yok.
 ARCHIVE_TOKEN=yerel-test-anahtari
-MEDIA_BASE=https://makine.tailnet.ts.net
 
 # Supabase (listeler)
 SUPABASE_URL=https://PROJE.supabase.co
