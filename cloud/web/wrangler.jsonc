@@ -1,0 +1,21 @@
+{
+  // Cloudflare Workers yapılandırması.
+  // Panelde: Workers & Pages -> bu proje -> Settings -> Build -> Path = cloud/web
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tasu-arsiv",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-01-01",
+
+  // public/ statik olarak sunulur; eşleşmeyen yollar Worker'a düşer.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+
+  // ARCHIVE_TOKEN / SUPABASE_URL / SUPABASE_SERVICE_KEY buraya YAZILMAZ.
+  // Panelden Settings -> Variables and Secrets altında secret olarak girilir.
+}

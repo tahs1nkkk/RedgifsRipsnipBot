@@ -7,6 +7,6 @@ create table if not exists public.tasu_sync (
 );
 
 -- RLS açık ve hiçbir policy yok: anon/authenticated anahtarlar tabloyu
--- göremez. Pages Functions service_role anahtarıyla konuşur ve RLS'i
+-- göremez. Worker service_role anahtarıyla konuşur ve RLS'i
 -- zaten aşar — sapsal-panel'deki modelin aynısı.
 alter table public.tasu_sync enable row level security;

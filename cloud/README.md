@@ -5,7 +5,7 @@
 | Parça | Nerede çalışır | Ne yapar |
 |---|---|---|
 | `server/` | **Senin PC'n** (bot sunucusuyla aynı makine) | Medya deposu: telefon indirdiklerini buraya yükler, buradan izler. Alan = diskin kadar. |
-| `web/` | **Cloudflare Pages** | Link arşivin: uygulamadaki listeler + medya tarayıcı, her tarayıcıdan. |
+| `web/` | **Cloudflare Workers** | Link arşivin: uygulamadaki listeler + medya tarayıcı, her tarayıcıdan. |
 
 İkisini de **tek gizli anahtar** açar. Önce onu üret (PowerShell):
 
@@ -64,21 +64,31 @@ Telefonda test: Safari'de `https://…ts.net/health?token=ANAHTAR` →
 → SQL Editor → `cloud/supabase.sql` içeriğini yapıştır → Run. (İstersen bunun
 yerine yeni ücretsiz bir proje de açabilirsin; SQL aynı.)
 
-## 4) Cloudflare Pages sitesi (10 dakika)
+## 4) Cloudflare Worker sitesi (10 dakika)
 
-sapsal-panel'i nasıl kurduysan aynısı:
+Site bir **Worker**'dır (Pages değil). `public/` statik dosyalar olarak
+sunulur, `/api/*` istekleri `src/worker.js`'e düşer.
 
-1. Cloudflare → **Workers & Pages** → **Create** → **Pages** → Git repo bağla
-   (`TasuDownloader`).
-   - **Root directory (advanced)** başlığını aç → `cloud/web` yaz. Bu adım
-     atlanırsa build **kesin başarısız olur**: Cloudflare depo kökünde
-     `public` arar, bulamaz.
-   - **Framework preset = None**, **Build command = boş**, **Build output
-     directory = `public`**.
-   - Ayar sonradan da düzeltilebilir: proje → Settings → Builds &
-     deployments → Build configuration → düzenle → Deployments sekmesinden
-     **Retry deployment**.
-2. **Settings → Environment variables** (Production + Preview):
+**Depoyu zaten bağladıysan** yapman gereken tek şey `Path` alanını
+düzeltmek — Worker'ın yapılandırması depo kökünde değil, `cloud/web`
+altında:
+
+1. Cloudflare → **Workers & Pages** → projen → **Settings** → **Build**
+   → **Build configuration** → **Edit**:
+
+| Alan | Değer |
+|---|---|
+| Build command | *(boş)* |
+| Deploy command | `npx wrangler deploy` |
+| Non-production branch deploy command | `npx wrangler versions upload` |
+| **Path** | **`cloud/web`** ← `/` ise build başarısız olur |
+
+2. **Worker'ın adı `wrangler.jsonc` içindeki `name` ile aynı olmalı.**
+   Depodaki değer `tasu-arsiv`. Panelde Worker'ın adı farklıysa ikisinden
+   birini değiştir, yoksa deploy adım adım doğru gider ama yanlış Worker'a
+   yazar.
+
+3. **Settings → Variables and Secrets** → üçünü de **Secret** türünde ekle:
 
 | Değişken | Değer |
 |---|---|
@@ -86,16 +96,32 @@ sapsal-panel'i nasıl kurduysan aynısı:
 | `SUPABASE_URL` | `https://xwimvccylidnanwbncpb.supabase.co` (ya da yeni projeninki) |
 | `SUPABASE_SERVICE_KEY` | Supabase → Project Settings → API → service_role |
 
-3. Deploy sonrası adresini al: `https://tasu-arsiv.pages.dev` gibi.
-4. Siteyi aç → anahtarını gir → medya sunucusu alanına `…ts.net` adresini
+4. **Deployments** sekmesi → **Retry deployment** (ya da yeni bir push).
+5. Adresin: `https://tasu-arsiv.<hesap-adın>.workers.dev`.
+6. Siteyi aç → anahtarını gir → medya sunucusu alanına `…ts.net` adresini
    yaz → Giriş.
+
+Sıfırdan kuruyorsan: **Workers & Pages → Create → Workers → Import a
+repository** → `TasuDownloader` → yukarıdaki tabloyu uygula.
+
+### Yerel deneme
+
+```powershell
+cd C:\Users\lsatv\TasuDownloader\cloud\web
+Copy-Item .dev.vars.example .dev.vars   # üç değeri doldur
+npm install
+npx wrangler dev
+```
+
+`http://localhost:8787` gerçek Worker çalışma zamanıdır — `/api/*` dahil
+her şey yayındaki gibi davranır. `.dev.vars` git'e girmez.
 
 ## 5) Uygulama ayarları (1 dakika)
 
 Telefonda TasuDownloader → **Ayarlar → Bulut ve Eşitleme**:
 
 - Medya sunucusu: `https://<makine>.<tailnet>.ts.net`
-- Arşiv sitesi: `https://tasu-arsiv.pages.dev`
+- Arşiv sitesi: `https://tasu-arsiv.<hesap-adın>.workers.dev`
 - Gizli anahtar: aynı anahtar
 - **Bağlantıyı sına** → iki satır da ✓ olmalı (boş disk alanını da gösterir)
 - "İndirilenler nereye": **Bulut** = cihazda yer kaplamaz; **İkisi** = hem
@@ -105,8 +131,8 @@ Telefonda TasuDownloader → **Ayarlar → Bulut ve Eşitleme**:
 
 ```
 telefon ──indir──▶ uygulama ──PUT /files──▶ PC (Tailscale Funnel, token'lı)
-telefon ──listeler──▶ Pages /api/lists ──▶ Supabase (service key sadece sunucuda)
-tarayıcı ──▶ tasu-arsiv.pages.dev ──▶ listeler + PC'deki medya
+telefon ──listeler──▶ Worker /api/lists ──▶ Supabase (service key sadece sunucuda)
+tarayıcı ──▶ tasu-arsiv.workers.dev ──▶ listeler + PC'deki medya
 ```
 
 - Medya **hiçbir üçüncü tarafa çıkmaz**: telefon ↔ senin PC'n. Tailscale
@@ -118,6 +144,14 @@ tarayıcı ──▶ tasu-arsiv.pages.dev ──▶ listeler + PC'deki medya
 
 ## Sık sorunlar
 
+- **Cloudflare "build failed":** neredeyse her zaman **Path** hâlâ `/`
+  olduğu içindir — `npx wrangler deploy` depo kökünde yapılandırma arar,
+  orada yoktur. `cloud/web` yap. İkinci sık neden: paneldeki Worker adı ile
+  `wrangler.jsonc` içindeki `name` tutmuyor.
+- **Site açılıyor ama "Anahtar yanlış" diyor:** `ARCHIVE_TOKEN` Secret'ı
+  eklenmemiş ya da başında/sonunda boşluk kalmış.
+- **Listeler "alınamadı" diyor:** `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`
+  eksik, ya da `cloud/supabase.sql` henüz çalıştırılmamış.
 - **Uygulama "Bulut ✗" diyor:** PC'de `node server.js` çalışıyor mu?
   `tailscale funnel status` adresi gösteriyor mu?
 - **Web arşivi "401":** Cloudflare'deki `ARCHIVE_TOKEN` ile girdiğin anahtar

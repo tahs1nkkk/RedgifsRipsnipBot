@@ -35,7 +35,7 @@ struct SettingsScreen: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    TextField("https://tasu-arsiv.pages.dev", text: $settings.syncBaseURL)
+                    TextField("https://tasu-arsiv.workers.dev", text: $settings.syncBaseURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)

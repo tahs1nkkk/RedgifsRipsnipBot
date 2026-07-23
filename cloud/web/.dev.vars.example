@@ -1,0 +1,5 @@
+# `npx wrangler dev` için yerel değişkenler.
+# Kopyala: Copy-Item .dev.vars.example .dev.vars — .dev.vars git'e girmez.
+ARCHIVE_TOKEN=yerel-test-anahtari
+SUPABASE_URL=https://PROJE.supabase.co
+SUPABASE_SERVICE_KEY=service_role-anahtari

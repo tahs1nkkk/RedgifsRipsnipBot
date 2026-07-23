@@ -50,7 +50,7 @@ final class AppSettings: ObservableObject {
     /// The PC media server, e.g. https://makine.tailnet.ts.net — empty means
     /// no cloud: downloads go to Photos regardless of `downloadDestination`.
     @Published var cloudBaseURL: String { didSet { persist() } }
-    /// The Cloudflare Pages archive site, e.g. https://tasu-arsiv.pages.dev.
+    /// The Cloudflare Worker archive site, e.g. https://tasu-arsiv.<hesap>.workers.dev.
     @Published var syncBaseURL: String { didSet { persist() } }
     /// One secret unlocks both services. Lives in the Keychain, not defaults.
     @Published var sharedToken: String { didSet { KeychainBox.set(sharedToken, for: "sharedToken"); notify() } }

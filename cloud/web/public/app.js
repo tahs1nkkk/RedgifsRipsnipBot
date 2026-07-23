@@ -2,7 +2,7 @@
  * Tasu Arşiv ön yüzü.
  *
  * İki kaynaktan okur:
- *  - Listeler: bu sitenin kendi /api/lists ucu (Pages Functions → Supabase).
+ *  - Listeler: bu sitenin kendi /api/lists ucu (Worker → Supabase).
  *  - Medya: PC'deki medya sunucusu (Tailscale Funnel adresi), tarayıcıdan
  *    doğrudan — yükleme ve silme dahil. Token her istekte Bearer olarak gider;
  *    medya adresi ve token yalnız bu tarayıcının localStorage'ında durur.

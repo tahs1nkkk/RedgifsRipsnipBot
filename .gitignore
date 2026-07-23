@@ -18,3 +18,6 @@ ripsnip-profile/
 cloud/server/config.json
 # Where the media server stores uploads when the config keeps the default dir.
 cloud/server/media/
+# Local secrets for `wrangler dev`; .dev.vars.example is the template.
+cloud/web/.dev.vars
+cloud/web/.wrangler/

@@ -9,8 +9,8 @@
     },
     {
       "name": "tasu-arsiv-web",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8792", "--directory", "cloud/web/public"],
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["wrangler", "dev", "--port", "8792", "--config", "cloud/web/wrangler.jsonc"],
       "port": 8792
     }
   ]
