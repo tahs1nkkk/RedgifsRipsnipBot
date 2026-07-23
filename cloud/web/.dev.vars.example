@@ -1,5 +1,18 @@
 # `npx wrangler dev` için yerel değişkenler.
 # Kopyala: Copy-Item .dev.vars.example .dev.vars — .dev.vars git'e girmez.
+
+# Google girişi (Google Cloud Console -> OAuth istemcisi)
+GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-xxxxx
+# Siteye girebilecek e-posta(lar); virgülle ayır
+ALLOWED_EMAIL=lsatvofficial@gmail.com
+# Oturum çerezini imzalayan gizli anahtar (rastgele üret)
+SESSION_SECRET=rastgele-uzun-bir-deger
+
+# Medya + uygulama ortak anahtarı, medya sunucusu adresi
 ARCHIVE_TOKEN=yerel-test-anahtari
+MEDIA_BASE=https://makine.tailnet.ts.net
+
+# Supabase (listeler)
 SUPABASE_URL=https://PROJE.supabase.co
 SUPABASE_SERVICE_KEY=service_role-anahtari

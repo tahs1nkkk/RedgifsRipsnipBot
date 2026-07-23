@@ -1,29 +1,12 @@
-// Ortak yardımcılar: token denetimi + Supabase REST erişimi.
+// Ortak yardımcılar: JSON yanıtı + Supabase REST erişimi.
 // Service key yalnız burada (sunucu tarafında) yaşar; tarayıcıya asla inmez.
-
-export function unauthorized() {
-  return json({ ok: false, error: "geçersiz token" }, 401);
-}
+// Yetki denetimi (oturum çerezi ya da Bearer token) worker.js'te yapılır.
 
 export function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8", ...headers }
   });
-}
-
-export function tokenOk(request, env) {
-  const expected = env.ARCHIVE_TOKEN || "";
-  if (!expected) return false;
-  const header = request.headers.get("Authorization") || "";
-  const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (presented.length !== expected.length) return false;
-  // Workers'ta timingSafeEqual yok; sabit zamanlı karşılaştırmayı elle yap.
-  let diff = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    diff |= presented.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return diff === 0;
 }
 
 export async function supabase(env, path, init = {}) {

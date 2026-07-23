@@ -1,11 +1,15 @@
 /*
  * Tasu Arşiv ön yüzü.
  *
+ * Giriş Google ile, Worker tarafında yapılır — bu koda yalnız oturum açmış
+ * kullanıcı ulaşır. Açılışta /api/config'ten medya sunucusu adresi + token
+ * gelir; kullanıcı hiçbir şey yazmaz.
+ *
  * İki kaynaktan okur:
- *  - Listeler: bu sitenin kendi /api/lists ucu (Worker → Supabase).
+ *  - Listeler: bu sitenin kendi /api/lists ucu (Worker → Supabase). Oturum
+ *    çerezi yeterli; Bearer da eklenir (uygulamayla aynı uç).
  *  - Medya: PC'deki medya sunucusu (Tailscale Funnel adresi), tarayıcıdan
- *    doğrudan — yükleme ve silme dahil. Token her istekte Bearer olarak gider;
- *    medya adresi ve token yalnız bu tarayıcının localStorage'ında durur.
+ *    doğrudan — yükleme ve silme dahil. Token yalnız bu oturum boyunca bellekte.
  *
  * Bilinçli olarak framework'süz: iki görünümlü kişisel bir site için Next/React
  * bundle'ı taşımak, "en az bağımlılık" kuralının tam tersi olurdu.
@@ -14,12 +18,8 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  const store = {
-    get token() { return localStorage.getItem("tasuToken") || ""; },
-    set token(v) { v ? localStorage.setItem("tasuToken", v) : localStorage.removeItem("tasuToken"); },
-    get mediaBase() { return (localStorage.getItem("tasuMedia") || "").replace(/\/+$/, ""); },
-    set mediaBase(v) { v ? localStorage.setItem("tasuMedia", v) : localStorage.removeItem("tasuMedia"); }
-  };
+  // Oturum içi bellek: token/adres /api/config'ten gelir, diske yazılmaz.
+  const store = { token: "", mediaBase: "" };
   const authHeaders = () => ({ Authorization: `Bearer ${store.token}` });
 
   /* ---------------------------------------------------------------- durum */
@@ -95,41 +95,34 @@
   /* ---------------------------------------------------------------- görünüm */
 
   function show(view) {
-    $("login").hidden = view !== "login";
     $("view-lists").hidden = view !== "lists";
     $("view-media").hidden = view !== "media";
-    $("btn-logout").hidden = view === "login";
     $("tab-lists").setAttribute("aria-selected", String(view === "lists"));
     $("tab-media").setAttribute("aria-selected", String(view === "media"));
   }
 
-  /* ---------------------------------------------------------------- giriş */
+  /* ---------------------------------------------------------------- oturum */
 
-  async function tryLogin() {
-    const token = $("token-input").value.trim();
-    if (!token) return;
-    const media = $("media-input").value.trim();
-    $("btn-login").disabled = true;
-    const response = await fetch("/api/health", { headers: { Authorization: `Bearer ${token}` } })
-      .catch(() => null);
-    $("btn-login").disabled = false;
-    if (!response || !response.ok) {
-      $("login-error").hidden = false;
-      $("login-error").textContent = response && response.status === 401
-        ? "Anahtar yanlış."
-        : "Siteye ulaşılamadı — ortam değişkenleri ayarlı mı?";
+  // Google oturumu Worker'da. Buradan yalnız ayarları çekeriz; çerez süresi
+  // dolmuşsa /api/config 401 döner ve giriş sayfasına gideriz.
+  async function boot() {
+    const response = await fetch("/api/config").catch(() => null);
+    if (!response || response.status === 401) { location.href = "/auth/login"; return; }
+    if (!response.ok) {
+      show("lists");
+      emptyState($("lists-root"), "Ayarlar alınamadı",
+        `Sunucu ${response.status} döndürdü — ortam değişkenleri ayarlı mı?`);
       return;
     }
-    store.token = token;
-    if (media) store.mediaBase = media;
+    const cfg = await response.json();
+    store.token = cfg.token || "";
+    store.mediaBase = (cfg.mediaBase || "").replace(/\/+$/, "");
     show("lists");
     loadLists();
   }
 
   function logout() {
-    store.token = "";
-    $("media-input").value = store.mediaBase;
-    show("login");
+    location.href = "/auth/logout";
   }
 
   /* ---------------------------------------------------------------- listeler */
@@ -177,7 +170,7 @@
   async function loadLists() {
     skeletons($("lists-root"), 2);
     const response = await fetch("/api/lists", { headers: authHeaders() }).catch(() => null);
-    if (response && response.status === 401) { logout(); return; }
+    if (response && response.status === 401) { location.href = "/auth/login"; return; }
     if (!response || (response.status !== 200 && response.status !== 404)) {
       emptyState($("lists-root"), "Listeler alınamadı",
         `Sunucu ${response ? response.status : "ağ hatası"} döndürdü.`);
@@ -355,9 +348,6 @@
 
   /* ---------------------------------------------------------------- olaylar */
 
-  $("btn-login").addEventListener("click", tryLogin);
-  $("token-input").addEventListener("keydown", (e) => { if (e.key === "Enter") tryLogin(); });
-  $("media-input").addEventListener("keydown", (e) => { if (e.key === "Enter") tryLogin(); });
   $("btn-logout").addEventListener("click", logout);
 
   $("tab-lists").addEventListener("click", () => { show("lists"); loadLists(); });
@@ -404,11 +394,5 @@
 
   /* ---------------------------------------------------------------- açılış */
 
-  if (store.token) {
-    show("lists");
-    loadLists();
-  } else {
-    $("media-input").value = store.mediaBase;
-    show("login");
-  }
+  boot();
 })();

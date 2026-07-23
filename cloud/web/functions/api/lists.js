@@ -1,9 +1,9 @@
 // Liste anlık görüntüsü: uygulama PUT eder, site ve uygulama GET eder.
 // Depo tek satırdır (id = "default") — kişisel arşiv, kişi başı bir kayıt.
-import { json, supabase, tokenOk, unauthorized } from "./_utils.js";
+// Yetki denetimi çağırandan önce (worker.js) yapılır.
+import { json, supabase } from "./_utils.js";
 
-export async function onRequestGet({ request, env }) {
-  if (!tokenOk(request, env)) return unauthorized();
+export async function onRequestGet({ env }) {
   const response = await supabase(env, "tasu_sync?id=eq.default&select=payload");
   if (!response.ok) return json({ ok: false, error: `supabase ${response.status}` }, 502);
   const rows = await response.json();
@@ -12,7 +12,6 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPut({ request, env }) {
-  if (!tokenOk(request, env)) return unauthorized();
   let payload;
   try {
     payload = await request.json();

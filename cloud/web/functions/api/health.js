@@ -1,6 +1,6 @@
-import { json, tokenOk, unauthorized } from "./_utils.js";
+// Basit sağlık ucu. Yetki denetimi çağırandan önce yapılır.
+import { json } from "./_utils.js";
 
-export async function onRequestGet({ request, env }) {
-  if (!tokenOk(request, env)) return unauthorized();
+export function onRequestGet() {
   return json({ ok: true });
 }

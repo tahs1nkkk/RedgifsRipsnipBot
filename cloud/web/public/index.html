@@ -17,29 +17,13 @@
     <nav aria-label="Bölümler">
       <button id="tab-lists" class="tab" aria-selected="true">Listeler</button>
       <button id="tab-media" class="tab" aria-selected="false">Medya</button>
-      <button id="btn-logout" class="ghost" hidden>Çıkış</button>
+      <button id="btn-logout" class="ghost">Çıkış</button>
     </nav>
   </header>
 
   <main>
-    <!-- Giriş: tek gizli anahtar. localStorage'da tutulur, her istekte Bearer. -->
-    <section id="login" hidden>
-      <div class="card">
-        <h2>Giriş</h2>
-        <p>Uygulamadaki "Gizli anahtar" ile aynı değeri gir. Anahtar yalnız bu tarayıcıda saklanır.</p>
-        <label class="field">
-          <span>Gizli anahtar</span>
-          <input id="token-input" type="password" autocomplete="current-password">
-        </label>
-        <label class="field">
-          <span>Medya sunucusu (opsiyonel — PC'nin ts.net adresi)</span>
-          <input id="media-input" type="url" placeholder="https://makine.tailnet.ts.net">
-        </label>
-        <button id="btn-login" class="primary">Giriş yap</button>
-        <p id="login-error" class="error" role="alert" hidden></p>
-      </div>
-    </section>
-
+    <!-- Giriş, Google ile Worker tarafında yapılır (auth.js). Buraya yalnız
+         oturum açmış kullanıcı ulaşır; ayarlar /api/config'ten gelir. -->
     <section id="view-lists" hidden aria-label="Listeler">
       <div class="toolbar">
         <input id="lists-search" class="grow" type="search" placeholder="Listelerde ara…" aria-label="Listelerde ara">
@@ -70,7 +54,7 @@
         <button id="media-sort" class="ghost" aria-label="Sıralamayı değiştir">Yeni → eski</button>
       </div>
 
-      <p id="media-note" class="muted" hidden>Medya sunucusu adresi girilmedi. Çıkış yapıp giriş ekranında ekleyebilirsin.</p>
+      <p id="media-note" class="muted" hidden>Medya sunucusu adresi ayarlı değil. Cloudflare'de <code>MEDIA_BASE</code> değişkenine PC'nin <code>ts.net</code> adresini ekle.</p>
       <div id="media-root" class="media-grid"></div>
     </section>
   </main>
