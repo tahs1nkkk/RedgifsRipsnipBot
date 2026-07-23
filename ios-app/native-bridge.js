@@ -162,60 +162,196 @@
 
   /* -------------------------------------------------------------- fab helper */
 
-  function isVisible(el) {
-    if (!el) return false;
-    const rect = el.getBoundingClientRect();
-    if (rect.width < 5 || rect.height < 5) return false;
-    if (rect.bottom < 0 || rect.top > innerHeight) return false;
-    const style = getComputedStyle(el);
-    return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) > 0.05;
+  // The handlers still build their buttons — the app just never shows them (see
+  // the opacity rule in the generated CSS). They stay useful as *resolvers*: a
+  // handler button knows the real source URL behind a thumbnail, which a raw
+  // <video>/<img> src often is not. So the flow is media-first: find the media
+  // the user is looking at, then hand off to the handler button covering it,
+  // and only download the element's own src when no handler claims it.
+  const BUTTON_SELECTOR = __RG_BUTTONS__;
+
+  function onScreen(rect) {
+    return rect.width >= 56 && rect.height >= 56
+      && rect.bottom > 0 && rect.top < innerHeight
+      && rect.right > 0 && rect.left < innerWidth;
   }
 
-  const KNOWN_BUTTONS = [
-    "#rg-ripsnip-viewer-button",
-    "#rg-ripsnip-helper-button",
-    "#rg-ig-one",
-    ".rg-downloader-reddit-button",
-    ".rg-coomer-download",
-    ".rg-ripsnip-tile-button"
-  ];
+  function clickTarget(el) {
+    // Scrolller's controls live in a shadow root; the element matched by the
+    // selector is the host, and clicking a host does nothing.
+    const inner = el.shadowRoot?.querySelector("button");
+    (inner || el).click();
+  }
 
-  // The app's floating download button asks the page what to grab. Site
-  // handlers know best, so their buttons are tried first; the generic
-  // biggest-media fallback covers pages without a handler.
-  window.__rgFabDownload = () => {
-    for (const selector of KNOWN_BUTTONS) {
-      const el = [...document.querySelectorAll(selector)].find(isVisible);
-      if (el) {
-        el.click();
-        return "clicked";
+  function handlerButtons() {
+    return [...document.querySelectorAll(BUTTON_SELECTOR)]
+      .map((el) => ({ el, rect: el.getBoundingClientRect() }))
+      .filter((b) => b.rect.width > 0 && b.rect.height > 0);
+  }
+
+  // A handler pins its button to a corner of the media it belongs to, so the
+  // button's centre lands inside that media's box (allow a little slack for
+  // buttons nudged just outside it).
+  function buttonFor(rect, buttons) {
+    let best = null;
+    let bestDistance = Infinity;
+    const mx = rect.left + rect.width / 2;
+    const my = rect.top + rect.height / 2;
+    for (const button of buttons) {
+      const bx = button.rect.left + button.rect.width / 2;
+      const by = button.rect.top + button.rect.height / 2;
+      const inside = bx >= rect.left - 12 && bx <= rect.right + 12
+        && by >= rect.top - 12 && by <= rect.bottom + 12;
+      if (!inside) continue;
+      const distance = Math.hypot(bx - mx, by - my);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = button.el;
       }
     }
-    const scrolller = document.getElementById("rg-scrolller-v2-host")?.shadowRoot?.querySelector("button");
-    if (scrolller) {
-      scrolller.click();
+    return best;
+  }
+
+  function candidates() {
+    const buttons = handlerButtons();
+    const found = [];
+
+    for (const el of document.querySelectorAll("video")) {
+      const rect = el.getBoundingClientRect();
+      if (!onScreen(rect)) continue;
+      const src = el.currentSrc || el.src
+        || [...el.querySelectorAll("source")].map((s) => s.src).find(Boolean) || "";
+      found.push({ rect, src, image: false, button: buttonFor(rect, buttons) });
+    }
+
+    for (const el of document.querySelectorAll("img")) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 120 || rect.height < 120 || !onScreen(rect)) continue;
+      // A poster frame or a play-button overlay sits on top of a video that is
+      // already a candidate; one entry per spot keeps the picker honest.
+      if (found.some((m) => Math.abs(m.rect.left - rect.left) < 24 && Math.abs(m.rect.top - rect.top) < 24)) continue;
+      found.push({
+        rect,
+        src: el.currentSrc || el.src || "",
+        image: true,
+        button: buttonFor(rect, buttons)
+      });
+    }
+
+    // Media the handlers do not recognise and that has no usable src of its own
+    // is noise in the picker and a dead tap in centre mode.
+    return found.filter((m) => m.button || /^https?:/i.test(m.src));
+  }
+
+  function grab(media) {
+    if (media.button) {
+      clickTarget(media.button);
       return "clicked";
     }
+    runtime.sendMessage({
+      type: "DIRECT_DOWNLOAD",
+      urls: [media.src],
+      imageMode: media.image,
+      fallbackSourceUrl: location.href
+    });
+    return media.image ? "image" : "video";
+  }
 
-    const videos = [...document.querySelectorAll("video")]
-      .map((v) => ({
-        src: v.currentSrc || v.src || [...v.querySelectorAll("source")].map((s) => s.src).find(Boolean) || "",
-        rect: v.getBoundingClientRect()
-      }))
-      .filter((m) => /^https?:/i.test(m.src) && m.rect.width > 100 && m.rect.bottom > 0 && m.rect.top < innerHeight)
-      .sort((a, b) => b.rect.width * b.rect.height - a.rect.width * a.rect.height);
-    if (videos[0]) {
-      runtime.sendMessage({ type: "DIRECT_DOWNLOAD", urls: [videos[0].src], fallbackSourceUrl: location.href });
-      return "video";
+  // Feeds scroll vertically, so "the one I am looking at" is the one nearest the
+  // middle of the screen height; horizontal distance only breaks ties in grids.
+  function centreMost(list) {
+    const cx = innerWidth / 2;
+    const cy = innerHeight / 2;
+    let best = null;
+    let bestScore = Infinity;
+    for (const media of list) {
+      const mx = media.rect.left + media.rect.width / 2;
+      const my = media.rect.top + media.rect.height / 2;
+      const score = Math.abs(my - cy) + Math.abs(mx - cx) * 0.25;
+      if (score < bestScore) {
+        bestScore = score;
+        best = media;
+      }
+    }
+    return best;
+  }
+
+  /* ------------------------------------------------------------ pick overlay */
+
+  const PICKER_ID = "rg-native-picker";
+  let pickerTimer = 0;
+
+  function dismissPicker() {
+    clearTimeout(pickerTimer);
+    document.getElementById(PICKER_ID)?.remove();
+  }
+
+  function showPicker(list) {
+    dismissPicker();
+    const layer = document.createElement("div");
+    layer.id = PICKER_ID;
+    layer.style.cssText = [
+      "position:fixed", "inset:0", "z-index:2147483600",
+      "background:rgba(0,0,0,.28)", "-webkit-backdrop-filter:blur(2px)", "backdrop-filter:blur(2px)"
+    ].join(";");
+    layer.addEventListener("click", dismissPicker);
+
+    list.forEach((media, index) => {
+      const spot = document.createElement("button");
+      spot.textContent = String(index + 1);
+      const size = 54;
+      const left = Math.min(innerWidth - size - 8, Math.max(8, media.rect.left + media.rect.width / 2 - size / 2));
+      const top = Math.min(innerHeight - size - 8, Math.max(8, media.rect.top + media.rect.height / 2 - size / 2));
+      spot.style.cssText = [
+        "position:fixed", `left:${left}px`, `top:${top}px`,
+        `width:${size}px`, `height:${size}px`, "border-radius:50%",
+        "border:1.5px solid rgba(255,255,255,.55)",
+        "background:rgba(255,255,255,.22)",
+        "-webkit-backdrop-filter:blur(18px) saturate(180%)",
+        "backdrop-filter:blur(18px) saturate(180%)",
+        "color:#fff", "font:600 19px/1 -apple-system,system-ui,sans-serif",
+        "box-shadow:0 6px 20px rgba(0,0,0,.35)", "cursor:pointer",
+        "display:flex", "align-items:center", "justify-content:center",
+        "-webkit-tap-highlight-color:transparent", "touch-action:manipulation"
+      ].join(";");
+      spot.addEventListener("click", (event) => {
+        event.stopPropagation();
+        dismissPicker();
+        // The overlay has to be gone before the click lands, or it swallows the
+        // synthetic click meant for the handler button underneath.
+        setTimeout(() => grab(media), 0);
+      });
+      layer.appendChild(spot);
+    });
+
+    document.body.appendChild(layer);
+    pickerTimer = setTimeout(dismissPicker, 5000);
+  }
+
+  /* ------------------------------------------------------------ entry point */
+
+  // mode "centre": short tap — take the media in the middle of the screen.
+  // mode "pick":   long press — mark every candidate and let the user choose.
+  window.__rgFabDownload = (mode) => {
+    dismissPicker();
+    const list = candidates();
+
+    if (mode === "pick") {
+      if (!list.length) return "none";
+      if (list.length === 1) return grab(list[0]);
+      showPicker(list);
+      return "picker";
     }
 
-    const images = [...document.querySelectorAll("img")]
-      .map((i) => ({ src: i.currentSrc || i.src || "", rect: i.getBoundingClientRect() }))
-      .filter((m) => /^https?:/i.test(m.src) && m.rect.width > 180 && m.rect.height > 180 && m.rect.bottom > 0 && m.rect.top < innerHeight)
-      .sort((a, b) => b.rect.width * b.rect.height - a.rect.width * a.rect.height);
-    if (images[0]) {
-      runtime.sendMessage({ type: "DIRECT_DOWNLOAD", urls: [images[0].src], imageMode: true, fallbackSourceUrl: location.href });
-      return "image";
+    const media = centreMost(list);
+    if (media) return grab(media);
+
+    // Pages with a single page-level button (Instagram's "download all",
+    // Coomer post pages) expose no measurable media of their own.
+    const fallback = handlerButtons()[0];
+    if (fallback) {
+      clickTarget(fallback.el);
+      return "clicked";
     }
     return "none";
   };

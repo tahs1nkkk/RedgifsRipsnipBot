@@ -3,46 +3,44 @@ import Foundation
 /// App-side settings store. The payload the in-app browser reads mirrors the
 /// extension's `rgRipsnipSettings` JSON (see edge-extension/common/settings.js),
 /// so the injected handlers see the exact shape they always have.
+///
+/// What is *not* here is deliberate. This is a downloader, so there is no
+/// switch for "turn downloading off" and none for "hide the download buttons":
+/// the page-injected buttons are always hidden (the app drives them from the
+/// floating button instead) and every handler capability is always on. A
+/// setting that only ever has one sane value is a setting that lies about
+/// having two.
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
     static let changedNotification = Notification.Name("rgSettingsChanged")
     static let settingsKey = "rgRipsnipSettings"
 
-    @Published var masterEnabled: Bool { didSet { persist() } }
-    @Published var showFab: Bool { didSet { persist() } }
-    @Published var redgifsAvatarDownload: Bool { didSet { persist() } }
-    @Published var redditImages: Bool { didSet { persist() } }
-    @Published var hideRedditProfileAvatars: Bool { didSet { persist() } }
-    @Published var scrolllerButtons: Bool { didSet { persist() } }
-    @Published var coomerButtons: Bool { didSet { persist() } }
-    @Published var instagramButtons: Bool { didSet { persist() } }
-    @Published var buttonSize: Double { didSet { persist() } }
-    @Published var homeURL: String { didSet { persist() } }
+    /// The floating button's diameter. Applies to that button and nothing else
+    /// — the handlers' own buttons are invisible, so sizing them is meaningless.
+    @Published var fabSize: Double { didSet { persist() } }
+    /// Right-handed by default; left for the other half of the world.
+    @Published var fabOnLeft: Bool { didSet { persist() } }
+    /// The Reddit user-search bubble. Off for anyone who does not use it, since
+    /// it does occupy a corner of every Reddit page.
+    @Published var searchOverlayEnabled: Bool { didSet { persist() } }
 
-    // Reddit search overlay state, persisted like the extension's panel.
+    // Reddit search state, persisted like the extension's panel.
     @Published var searchUsername: String { didSet { persist() } }
     @Published var searchSubreddit: String { didSet { persist() } }
     @Published var searchProviders: Set<String> { didSet { persist() } }
 
     /// Keys handlers wrote through chrome.storage.set (folder lists and the
-    /// like). Kept verbatim and merged back into every read so those flows
-    /// keep working; the native-owned keys above always win.
+    /// like). Kept verbatim and merged back into every read so those flows keep
+    /// working; the native-owned keys below always win.
     private(set) var extraSettings: [String: Any]
 
     private let defaults = UserDefaults.standard
     private var loading = true
 
     init() {
-        masterEnabled = defaults.object(forKey: "masterEnabled") as? Bool ?? true
-        showFab = defaults.object(forKey: "showFab") as? Bool ?? true
-        redgifsAvatarDownload = defaults.object(forKey: "redgifsAvatarDownload") as? Bool ?? true
-        redditImages = defaults.object(forKey: "redditImages") as? Bool ?? true
-        hideRedditProfileAvatars = defaults.object(forKey: "hideRedditProfileAvatars") as? Bool ?? true
-        scrolllerButtons = defaults.object(forKey: "scrolllerButtons") as? Bool ?? true
-        coomerButtons = defaults.object(forKey: "coomerButtons") as? Bool ?? true
-        instagramButtons = defaults.object(forKey: "instagramButtons") as? Bool ?? true
-        buttonSize = defaults.object(forKey: "buttonSize") as? Double ?? 48
-        homeURL = defaults.string(forKey: "homeURL") ?? "https://www.redgifs.com"
+        fabSize = defaults.object(forKey: "fabSize") as? Double ?? 58
+        fabOnLeft = defaults.object(forKey: "fabOnLeft") as? Bool ?? false
+        searchOverlayEnabled = defaults.object(forKey: "searchOverlayEnabled") as? Bool ?? true
         searchUsername = defaults.string(forKey: "searchUsername") ?? ""
         searchSubreddit = defaults.string(forKey: "searchSubreddit") ?? ""
         searchProviders = Set(defaults.stringArray(forKey: "searchProviders") ?? ["reddit", "old"])
@@ -57,16 +55,9 @@ final class AppSettings: ObservableObject {
 
     private func persist() {
         guard !loading else { return }
-        defaults.set(masterEnabled, forKey: "masterEnabled")
-        defaults.set(showFab, forKey: "showFab")
-        defaults.set(redgifsAvatarDownload, forKey: "redgifsAvatarDownload")
-        defaults.set(redditImages, forKey: "redditImages")
-        defaults.set(hideRedditProfileAvatars, forKey: "hideRedditProfileAvatars")
-        defaults.set(scrolllerButtons, forKey: "scrolllerButtons")
-        defaults.set(coomerButtons, forKey: "coomerButtons")
-        defaults.set(instagramButtons, forKey: "instagramButtons")
-        defaults.set(buttonSize, forKey: "buttonSize")
-        defaults.set(homeURL, forKey: "homeURL")
+        defaults.set(fabSize, forKey: "fabSize")
+        defaults.set(fabOnLeft, forKey: "fabOnLeft")
+        defaults.set(searchOverlayEnabled, forKey: "searchOverlayEnabled")
         defaults.set(searchUsername, forKey: "searchUsername")
         defaults.set(searchSubreddit, forKey: "searchSubreddit")
         defaults.set(Array(searchProviders), forKey: "searchProviders")
@@ -74,13 +65,7 @@ final class AppSettings: ObservableObject {
     }
 
     func mergeExtraSettings(_ items: [String: Any]) {
-        let owned: Set<String> = [
-            "buttonVisibility", "rightShiftDownload", "ripsnipFallback", "buttonSize",
-            "redgifsAvatarDownload", "redditImages", "hideRedditProfileAvatars",
-            "scrolllerButtons", "coomerButtons", "instagramButtons",
-            "feedButtons", "profileButtons", "iframeButton", "directDownloads"
-        ]
-        for (key, value) in items where !owned.contains(key) {
+        for (key, value) in items where !Self.forcedKeys.contains(key) {
             extraSettings[key] = value
         }
         if let data = try? JSONSerialization.data(withJSONObject: extraSettings) {
@@ -89,26 +74,43 @@ final class AppSettings: ObservableObject {
         NotificationCenter.default.post(name: Self.changedNotification, object: nil)
     }
 
-    /// The dictionary handlers receive for `rgRipsnipSettings`. Mobile-hostile
-    /// values are forced here, exactly like the Orion bridge's storage wrapper:
-    /// hover never fires on touch, there is no hardware keyboard, and buttons
-    /// below 48px are hard to hit.
+    /// Everything `settingsPayload()` writes itself. A handler that persists one
+    /// of these must not be able to pin the app to its own value.
+    private static let forcedKeys: Set<String> = [
+        "buttonVisibility", "rightShiftDownload", "ripsnipFallback", "directDownloads",
+        "buttonSize", "feedButtons", "profileButtons", "iframeButton",
+        "redgifsAvatarDownload", "redditImages", "hideRedditProfileAvatars",
+        "scrolllerButtons", "coomerButtons", "instagramButtons"
+    ]
+
+    /// The dictionary handlers receive for `rgRipsnipSettings`.
+    ///
+    /// Every capability is on: the buttons are the app's media *resolvers*, not
+    /// UI, so switching one off would only blind the floating button on that
+    /// site. Mobile-hostile values are forced the same way the Orion bridge
+    /// forces them — hover never fires on touch, and there is no Shift key.
     func settingsPayload() -> [String: Any] {
         var payload = extraSettings
         payload["buttonVisibility"] = "always"
         payload["rightShiftDownload"] = false
         payload["ripsnipFallback"] = false
         payload["directDownloads"] = true
-        payload["buttonSize"] = max(48, Int(buttonSize))
-        payload["feedButtons"] = masterEnabled
-        payload["profileButtons"] = masterEnabled
-        payload["iframeButton"] = masterEnabled
-        payload["redgifsAvatarDownload"] = masterEnabled && redgifsAvatarDownload
-        payload["redditImages"] = masterEnabled && redditImages
-        payload["hideRedditProfileAvatars"] = hideRedditProfileAvatars
-        payload["scrolllerButtons"] = masterEnabled && scrolllerButtons
-        payload["coomerButtons"] = masterEnabled && coomerButtons
-        payload["instagramButtons"] = masterEnabled && instagramButtons
+        // Fixed, and unrelated to fabSize: this sizes the hidden buttons, and
+        // the floating button finds media by asking where they sit. Big enough
+        // to measure reliably, small enough to stay inside its media's box.
+        payload["buttonSize"] = 48
+        payload["feedButtons"] = true
+        payload["profileButtons"] = true
+        payload["iframeButton"] = true
+        payload["redgifsAvatarDownload"] = true
+        payload["redditImages"] = true
+        // Avatars are below the floating button's 120px media threshold, so a
+        // resolver there can never be reached; skipping them keeps busy Reddit
+        // feeds from building hundreds of dead nodes.
+        payload["hideRedditProfileAvatars"] = true
+        payload["scrolllerButtons"] = true
+        payload["coomerButtons"] = true
+        payload["instagramButtons"] = true
         return payload
     }
 

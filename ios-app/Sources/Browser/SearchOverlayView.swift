@@ -16,8 +16,7 @@ struct SearchOverlayView: View {
                 .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
-                .background(Circle().fill(Color.blue))
-                .shadow(color: .black.opacity(revealed ? 0.35 : 0.12), radius: 8, y: 3)
+                .liquidGlass(in: Circle(), tint: .orange, interactive: true)
         }
         .opacity(revealed ? 1 : 0.28)
         .animation(.easeInOut(duration: 0.18), value: revealed)

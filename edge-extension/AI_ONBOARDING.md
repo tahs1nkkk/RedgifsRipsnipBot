@@ -3,7 +3,7 @@
 **Proje:** "RedGifs Downloader" — Edge/Chrome MV3 eklentisi. RedGifs, Reddit, Scrolller, Instagram'da tek tıkla medya indirme butonları ekler. UI metni **Türkçe**.
 
 ## Temel
-1. **Konum:** `C:\Users\lsatv\RedgifsRipsnipBot\edge-extension`. Güncel sürüm: **0.19.0**.
+1. **Konum:** `C:\Users\lsatv\TasuDownloader\edge-extension`. Güncel sürüm: **0.19.0**.
 2. **Paketleme:** `Compress-Archive -Path 'edge-extension\*' -DestinationPath '..\RedgifsExtension.zip' -Force`. Her değişiklikte `manifest.json` `version`'ı artır. **Üst klasörü ASLA zip'leme** (node_modules = 138MB Playwright botu).
 3. **Her zip'ten sonra:** eklentiyi reload ET **ve site sekmesini F5'le** — yoksa eski content script kalır ("Extension context invalidated", `chrome.runtime` undefined).
 4. **Kör deneme yapma.** Her content script konsola `[rg-{site}]` log'u yazar; sorunları sayfa-konsolu teşhisiyle çöz (tahmin çok vakit kaybettirdi).

@@ -1,53 +1,107 @@
 import SwiftUI
 
+/// Every row here changes something you can see. The switches that used to sit
+/// in this screen — master on/off, per-site button toggles, "show the floating
+/// button" — are gone: an app whose only job is downloading has no honest use
+/// for a switch that stops it downloading, and the site buttons are hidden
+/// machinery now rather than UI.
 struct SettingsScreen: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var browser: BrowserController
+    @ObservedObject private var favicons = FaviconLoader.shared
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("İndirme katmanı", isOn: $settings.masterEnabled)
-                    Toggle("Yüzen indirme butonu", isOn: $settings.showFab)
-                } header: {
-                    Text("Genel")
-                } footer: {
-                    Text("İndirme katmanı kapalıyken sitelere buton eklenmez. Değişiklik açık sayfaya anında iner; inatçı sayfalarda bir yenileme yeter.")
-                }
-
-                Section("Siteler") {
-                    Toggle("RedGifs profil fotoğrafı butonu", isOn: $settings.redgifsAvatarDownload)
-                    Toggle("Reddit görselleri", isOn: $settings.redditImages)
-                    Toggle("Reddit avatarlarında buton gizle", isOn: $settings.hideRedditProfileAvatars)
-                    Toggle("Scrolller butonları", isOn: $settings.scrolllerButtons)
-                    Toggle("Coomer butonları", isOn: $settings.coomerButtons)
-                    Toggle("Instagram butonları", isOn: $settings.instagramButtons)
-                }
-
-                Section {
-                    VStack(alignment: .leading) {
-                        Text("Buton boyutu: \(Int(settings.buttonSize)) px")
-                        Slider(value: $settings.buttonSize, in: 48...72, step: 2)
+                    HStack {
+                        Text("Boyut")
+                        Spacer()
+                        Text("\(Int(settings.fabSize)) px").foregroundStyle(.secondary)
                     }
-                    TextField("Açılış sayfası", text: $settings.homeURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
+                    Slider(value: $settings.fabSize, in: 44...78, step: 2)
+                    fabPreview
+                    Toggle("Solda dursun", isOn: $settings.fabOnLeft)
                 } header: {
-                    Text("Tarayıcı")
+                    Text("Yüzen indirme butonu")
+                } footer: {
+                    Text("Kısa dokunuş ekranın ortasındaki medyayı indirir. Basılı tutarsan sayfadaki tüm medya numaralanır, numaraya dokunarak seçersin. Bu boyut yalnızca bu butonu etkiler.")
                 }
 
                 Section {
+                    Toggle("Kullanıcı arama butonu", isOn: $settings.searchOverlayEnabled)
+                } header: {
+                    Text("Reddit")
+                } footer: {
+                    Text("Reddit sayfalarında karşı köşede beliren saydam arama balonu. Bir dokunuş belirginleştirir, ikinci dokunuş arama menüsünü açar.")
+                }
+
+                Section {
+                    ForEach(SiteCatalog.sites) { site in
+                        Button {
+                            browser.openSite(site)
+                        } label: {
+                            HStack(spacing: 12) {
+                                siteBadge(site)
+                                Text(site.name).foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    Button("Site simgelerini yenile") { favicons.clearCache() }
+                } header: {
+                    Text("Desteklenen siteler")
+                } footer: {
+                    Text("Bu liste derleme sırasında üretilir; yeni bir site eklendiğinde ana sayfaya kendiliğinden gelir.")
+                }
+
+                Section {
+                    Button("Ana sayfaya dön") { browser.goHome() }
                     Button("Sayfayı yenile") { browser.reload() }
                     Link("Fotoğraflar iznini yönet", destination: URL(string: UIApplication.openSettingsURLString)!)
                 } header: {
                     Text("Diğer")
                 } footer: {
-                    Text("İndirilenler doğrudan Fotoğraflar'a kaydedilir; paylaşım sayfası yoktur. Galeri, Fotoğraflar'da Gizli klasörüne taşınanları göstermez. webm dosyaları Fotoğraflar tarafından kabul edilmez.")
+                    Text("Bir siteyi açtıktan sonra adres çubuğu gizlenir; ana sayfaya Tarayıcı sekmesine tekrar dokunarak ya da soldan sağa kaydırarak dönersin. İndirilenler doğrudan Fotoğraflar'a kaydedilir. Fotoğraflar'da Gizli klasörüne taşınanlar galeride de görünmez. webm dosyalarını Fotoğraflar kabul etmez.")
                 }
             }
             .navigationTitle("Ayarlar")
         }
+    }
+
+    /// Shows the slider's effect at true size, so the number does not have to
+    /// be imagined against a page that is on another tab.
+    private var fabPreview: some View {
+        HStack {
+            Spacer()
+            Image(systemName: "arrow.down.to.line")
+                .font(.system(size: settings.fabSize * 0.36, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: settings.fabSize, height: settings.fabSize)
+                .liquidGlass(in: Circle(), tint: .accentColor, interactive: false)
+            Spacer()
+        }
+        .padding(.vertical, 6)
+        .animation(.easeOut(duration: 0.12), value: settings.fabSize)
+    }
+
+    private func siteBadge(_ site: SupportedSite) -> some View {
+        Group {
+            if let icon = favicons.icon(for: site) {
+                Image(uiImage: icon).resizable().scaledToFill()
+            } else {
+                site.color.overlay(
+                    Text(site.initial)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                )
+            }
+        }
+        .frame(width: 28, height: 28)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .onAppear { favicons.load(site) }
     }
 }

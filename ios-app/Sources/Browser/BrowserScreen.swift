@@ -14,33 +14,46 @@ struct BrowserScreen: View {
     @ObservedObject private var downloader = Downloader.shared
     @FocusState private var addressFocused: Bool
 
-    private let quickSites: [(String, String)] = [
-        ("RedGifs", "https://www.redgifs.com"),
-        ("Reddit", "https://www.reddit.com"),
-        ("Scrolller", "https://scrolller.com"),
-        ("Coomer", "https://coomer.st"),
-        ("Instagram", "https://www.instagram.com")
-    ]
-
     var body: some View {
-        VStack(spacing: 0) {
-            addressBar
-            ZStack(alignment: .bottom) {
-                WebViewContainer(controller: browser)
-                    .ignoresSafeArea(.keyboard)
+        ZStack(alignment: .bottom) {
+            // Kept in the hierarchy even while home is showing: tearing the web
+            // view down would mean re-loading and losing the scroll position
+            // every time someone glances at the home screen.
+            WebViewContainer(controller: browser)
+                .ignoresSafeArea(.keyboard)
+                .opacity(browser.showingHome ? 0 : 1)
+
+            if browser.showingHome {
+                homeLayer.transition(.opacity)
+            } else {
                 overlays
             }
         }
+        .animation(.easeInOut(duration: 0.22), value: browser.showingHome)
     }
 
+    // MARK: - Home
+
+    private var homeLayer: some View {
+        ZStack {
+            HomeBackground()
+            VStack(spacing: 14) {
+                addressBar
+                HomeScreen()
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    /// Only ever visible here. Once a site is open the page owns the whole
+    /// screen — a URL field is not what anyone is looking at a video for.
     private var addressBar: some View {
         HStack(spacing: 10) {
-            Button(action: { browser.goBack() }) { Image(systemName: "chevron.left") }
-                .disabled(!browser.canGoBack)
-            Button(action: { browser.goForward() }) { Image(systemName: "chevron.right") }
-                .disabled(!browser.canGoForward)
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.secondary)
 
-            TextField("adres", text: $browser.addressText)
+            TextField("adres veya arama", text: $browser.addressText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
@@ -48,63 +61,103 @@ struct BrowserScreen: View {
                 .focused($addressFocused)
                 .onSubmit {
                     addressFocused = false
+                    browser.showingHome = false
                     browser.load(browser.addressText)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 9))
 
-            if browser.isLoading {
-                ProgressView().controlSize(.small)
-            } else {
-                Button(action: { browser.reload() }) { Image(systemName: "arrow.clockwise") }
-            }
-
-            Menu {
-                ForEach(quickSites, id: \.0) { name, url in
-                    Button(name) { browser.load(url) }
+            if !browser.addressText.isEmpty {
+                Button {
+                    browser.addressText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
-            } label: {
-                Image(systemName: "square.grid.2x2")
+                .buttonStyle(.plain)
             }
         }
-        .font(.system(size: 16, weight: .medium))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .font(.system(size: 16))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .liquidGlassCapsule(interactive: false)
+        .padding(.horizontal, 20)
     }
+
+    // MARK: - Browsing
 
     private var overlays: some View {
         VStack(spacing: 10) {
             Spacer()
-            HStack(alignment: .bottom) {
-                if settings.masterEnabled && browser.isRedditPage {
-                    SearchOverlayView()
+            GlassGroup(spacing: 24) {
+                HStack(alignment: .bottom) {
+                    if settings.fabOnLeft { fab } else { searchBubble }
+                    Spacer(minLength: 0)
+                    if settings.fabOnLeft { searchBubble } else { fab }
                 }
-                Spacer()
-                if settings.masterEnabled && settings.showFab {
-                    fabButton
-                }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 16)
             if downloader.phase != .idle {
                 DownloadHUDView(phase: downloader.phase)
                     .padding(.horizontal, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .padding(.bottom, 10)
+        .animation(.spring(response: 0.34, dampingFraction: 0.82), value: downloader.phase)
     }
 
-    private var fabButton: some View {
-        Button(action: { browser.triggerFabDownload() }) {
-            Image(systemName: "arrow.down.to.line")
-                .font(.system(size: 21, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 52, height: 52)
-                .background(Circle().fill(Color.blue.opacity(0.92)))
-                .shadow(color: .black.opacity(0.35), radius: 9, y: 4)
+    @ViewBuilder private var searchBubble: some View {
+        if settings.searchOverlayEnabled && browser.isRedditPage {
+            SearchOverlayView()
+        } else {
+            // Holds the row's height so the floating button does not hop when
+            // the bubble comes and goes between Reddit pages.
+            Color.clear.frame(width: 1, height: 1)
         }
-        .accessibilityLabel("Bu sayfadaki medyayı indir")
+    }
+
+    private var fab: some View {
+        let size = settings.fabSize
+        return Image(systemName: "arrow.down.to.line")
+            .font(.system(size: size * 0.36, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .liquidGlass(in: Circle(), tint: browser.currentSite?.color ?? .accentColor, interactive: true)
+            .contentShape(Circle())
+            // Short tap takes the media in the middle of the screen; holding
+            // marks every candidate on the page and waits for a number.
+            .onTapGesture {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                browser.triggerFabDownload(.centre)
+            }
+            .onLongPressGesture(minimumDuration: 0.4) {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                browser.triggerFabDownload(.pick)
+            }
+            .accessibilityLabel("Ekrandaki medyayı indir")
+            .accessibilityHint("Basılı tutarsan sayfadaki tüm medyayı numaralandırır")
+    }
+}
+
+/// A soft wash behind the home screen. Glass needs something to refract; a flat
+/// system background makes iOS 26's material look like plain grey.
+struct HomeBackground: View {
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+            GeometryReader { geometry in
+                let width = geometry.size.width
+                ForEach(Array(SiteCatalog.sites.enumerated()), id: \.element.id) { index, site in
+                    Circle()
+                        .fill(site.color.opacity(0.28))
+                        .frame(width: width * 0.62)
+                        .blur(radius: 70)
+                        .offset(
+                            x: (index.isMultiple(of: 2) ? -0.28 : 0.34) * width,
+                            y: CGFloat(index) * geometry.size.height * 0.22 - geometry.size.height * 0.1
+                        )
+                }
+            }
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -120,10 +173,9 @@ struct DownloadHUDView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     @ViewBuilder private var icon: some View {

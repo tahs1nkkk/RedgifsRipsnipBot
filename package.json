@@ -1,8 +1,8 @@
 {
-  "name": "redgifs-ripsnip-helper",
+  "name": "tasudownloader",
   "version": "0.1.0",
   "private": true,
-  "description": "Single-video browser automation helper for permitted Redgifs links via Ripsnip.",
+  "description": "TasuDownloader: browser extension, Orion/iOS builds and a single-video automation helper for content you have the right to download.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

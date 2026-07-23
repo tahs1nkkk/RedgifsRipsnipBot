@@ -9,6 +9,12 @@ import WebKit
 final class BrowserController: NSObject, ObservableObject {
     static let shared = BrowserController(settings: .shared, records: .shared)
 
+    /// Which half of the browser tab is on screen. The web view is never torn
+    /// down — home is drawn over it — so going home and coming back costs
+    /// nothing and loses no scroll position.
+    @Published var showingHome = true
+    @Published var lastVisited = ""
+
     @Published var addressText = ""
     @Published var currentHost = ""
     @Published var canGoBack = false
@@ -19,6 +25,16 @@ final class BrowserController: NSObject, ObservableObject {
     let records: DownloadRecordStore
     private(set) var webView: WKWebView?
     private var cancellables = Set<AnyCancellable>()
+    private let edgeGesture = EdgeHomeGesture()
+
+    /// The catalog entry for the page on screen, when there is one. Lets the
+    /// floating button wear the site's colour.
+    var currentSite: SupportedSite? { SiteCatalog.site(forHost: currentHost) }
+
+    enum FabMode: String {
+        case centre
+        case pick
+    }
 
     // WKWebView's default user agent lacks the Safari token, which makes
     // Instagram and Google refuse logins. Present as mobile Safari instead.
@@ -66,7 +82,18 @@ final class BrowserController: NSObject, ObservableObject {
         if #available(iOS 16.4, *) { view.isInspectable = true }
         webView = view
 
-        load(settings.homeURL)
+        // WebKit owns the left-edge swipe while there is history to walk back
+        // through. This one only arms itself once there is not, so a single
+        // habit — swipe from the edge — walks back to the first page of the
+        // site and then out to the home screen.
+        edgeGesture.onTrigger = { [weak self] in self?.goHome() }
+        let recognizer = UIScreenEdgePanGestureRecognizer(target: edgeGesture, action: #selector(EdgeHomeGesture.handle(_:)))
+        recognizer.edges = .left
+        recognizer.delegate = edgeGesture
+        view.addGestureRecognizer(recognizer)
+
+        // No page is loaded here on purpose: the home screen is the landing
+        // page, and the first tile tap decides what this view shows.
         return view
     }
 
@@ -94,13 +121,26 @@ final class BrowserController: NSObject, ObservableObject {
     func goForward() { webView?.goForward() }
     func reload() { webView?.reload() }
 
+    /// Opening a tile is the one place the address bar is not involved, so it
+    /// is also where the browser half takes over the screen.
+    func openSite(_ site: SupportedSite) {
+        showingHome = false
+        load(site.url)
+    }
+
+    func goHome() {
+        showingHome = true
+    }
+
     private func syncNavigationState() {
         guard let webView else { return }
         canGoBack = webView.canGoBack
         canGoForward = webView.canGoForward
+        edgeGesture.armed = !webView.canGoBack
         if let url = webView.url {
             addressText = url.absoluteString
             currentHost = url.host?.lowercased() ?? ""
+            lastVisited = currentSite?.name ?? (url.host ?? url.absoluteString)
         }
     }
 
@@ -112,12 +152,17 @@ final class BrowserController: NSObject, ObservableObject {
         webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
     }
 
-    func triggerFabDownload() {
+    /// `.centre` is the short tap: take the media in the middle of the screen.
+    /// `.pick` is the long press: number every candidate and let the user pick.
+    func triggerFabDownload(_ mode: FabMode = .centre) {
         guard let webView else { return }
-        let js = "window.__rgFabDownload ? window.__rgFabDownload() : 'none';"
+        let js = "window.__rgFabDownload ? window.__rgFabDownload('\(mode.rawValue)') : 'none';"
         webView.evaluateJavaScript(js, in: nil, in: .defaultClient) { result in
-            if case .success(let value) = result, let outcome = value as? String, outcome == "none" {
-                Downloader.shared.flash("İndirilecek medya bulunamadı")
+            guard case .success(let value) = result, let outcome = value as? String else { return }
+            switch outcome {
+            case "none": Downloader.shared.flash("İndirilecek medya bulunamadı")
+            case "picker": Downloader.shared.flash("Numaralardan birine dokun")
+            default: break
             }
         }
     }
@@ -164,6 +209,32 @@ final class BrowserController: NSObject, ObservableObject {
         default:
             return ["ok": false, "error": "APP02: bilinmeyen istek"]
         }
+    }
+}
+
+// MARK: - Edge swipe
+
+/// Left-edge swipe that means "leave the site". Deliberately a plain NSObject
+/// rather than part of the controller: `gestureRecognizerShouldBegin` has to
+/// answer synchronously while UIKit is deciding whether to start the gesture,
+/// which a main-actor-isolated method cannot promise to do.
+final class EdgeHomeGesture: NSObject, UIGestureRecognizerDelegate {
+    /// Mirrors `!webView.canGoBack`, written from the main actor after every
+    /// navigation. False means WebKit's own back-swipe has somewhere to go and
+    /// this one must stay out of its way.
+    var armed = false
+    var onTrigger: (@MainActor () -> Void)?
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool { armed }
+
+    @objc func handle(_ recognizer: UIScreenEdgePanGestureRecognizer) {
+        guard recognizer.state == .ended else { return }
+        let travel = recognizer.translation(in: recognizer.view)
+        // A short flick or a mostly-vertical drag is someone scrolling near the
+        // edge, not someone asking to leave.
+        guard travel.x > 60, abs(travel.y) < 90 else { return }
+        let action = onTrigger
+        Task { @MainActor in action?() }
     }
 }
 

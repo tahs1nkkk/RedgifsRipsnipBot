@@ -1,11 +1,16 @@
-# Redgifs Ripsnip Helper
+# TasuDownloader
 
-Yerel tek-video otomasyon yardimcisidir. Kullanim amaci yalnizca indirme hakkin veya acik iznin olan iceriklerdir. Captcha, giris duvari, odeme duvari, DRM, anti-bot veya filigran/atif kaldirma korumalarini asmaya calismaz.
+Uc parcali bir arac takimi: Edge/Orion eklentisi, `ios-app/` altindaki native
+iOS uygulamasi ve asagida anlatilan yerel tek-video otomasyon yardimcisi.
+
+Kullanim amaci yalnizca indirme hakkin veya acik iznin olan iceriklerdir.
+Captcha, giris duvari, odeme duvari, DRM, anti-bot veya filigran/atif kaldirma
+korumalarini asmaya calismaz.
 
 ## Kurulum
 
 ```powershell
-cd C:\Users\lsatv\RedgifsRipsnipBot
+cd C:\Users\lsatv\TasuDownloader
 npm install
 npm run install-browser
 ```
@@ -17,7 +22,7 @@ Tavsiye edilen yeni yol: lokal Edge extension kullan. Ozel port veya ayri Edge p
 Kurulum dosyasi:
 
 ```text
-C:\Users\lsatv\RedgifsRipsnipBot\edge-extension
+C:\Users\lsatv\TasuDownloader\edge-extension
 ```
 
 Edge'de `edge://extensions` ac, `Developer mode` ac, `Load unpacked` ile bu klasoru sec. Detay: `edge-extension\README.md`.
@@ -42,7 +47,7 @@ Not: Bot mevcut normal Edge penceresine baglanamaz. Redgifs'i ilk kisayolun acti
 Komut satirindan dogrudan link vermek icin:
 
 ```powershell
-cd C:\Users\lsatv\RedgifsRipsnipBot
+cd C:\Users\lsatv\TasuDownloader
 npm start -- "https://www.redgifs.com/watch/..."
 ```
 
@@ -55,7 +60,7 @@ npm start -- --show-ripsnip "https://www.redgifs.com/watch/..."
 Indirilen dosyalar:
 
 ```text
-C:\Users\lsatv\RedgifsRipsnipBot\downloads
+C:\Users\lsatv\TasuDownloader\downloads
 ```
 
 ## Notlar

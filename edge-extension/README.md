@@ -11,7 +11,7 @@ Local-only unpacked Microsoft Edge extension. It adds download controls to RedGi
 5. Select:
 
 ```text
-C:\Users\lsatv\RedgifsRipsnipBot\edge-extension
+C:\Users\lsatv\TasuDownloader\edge-extension
 ```
 
 ## Use

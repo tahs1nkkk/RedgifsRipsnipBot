@@ -21,6 +21,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # macos-15 ships several Xcodes and defaults to 16.4, whose SDK has no
+      # Liquid Glass. The UI is written against iOS 26 APIs behind availability
+      # checks, so without this the app still builds — it just silently falls
+      # back to the pre-26 look everywhere. Pick the newest installed Xcode
+      # rather than pinning a version the runner image may drop.
+      - name: Select newest Xcode
+        run: |
+          newest=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Using $newest"
+          sudo xcode-select -s "$newest"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i ios
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

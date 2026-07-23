@@ -48,7 +48,7 @@ Artifact indirmek GitHub girişi ister, release varlığı istemez; workflow bu
 yüzden sabit URL'li "latest" release'ini de günceller:
 
 ```
-https://github.com/tahs1nkkk/RedgifsRipsnipBot/releases/download/latest/TasuDownloader.ipa
+https://github.com/tahs1nkkk/TasuDownloader/releases/download/latest/TasuDownloader.ipa
 ```
 
 ## Telefona kurulum (ücretsiz Apple ID)
@@ -76,10 +76,22 @@ fazla 3 sideload uygulama.
 
 ## Kullanım
 
-- **Tarayıcı** sekmesi: adres çubuğu + hızlı site menüsü. Sitelerin üstünde
-  eklentiden bildiğin indirme butonları; ekranın sağ altında ayrıca her sayfada
-  çalışan yüzen indirme butonu. Tek dokunuş → ilerleme kartı → "Fotoğraflara
-  kaydedildi". Paylaşım sayfası yok.
+- **Tarayıcı** sekmesi ana sayfayla açılır: desteklenen her site için büyük bir
+  kare. Simgeler sitenin kendi `apple-touch-icon`/favicon'undan çekilir, diske
+  önbelleklenir, gelmezse sitenin renginden üretilir. Liste `sites.json`'dan
+  gelir; o da `scripts/build-ios-app-js.js` içindeki `SITES` dizisinden üretilir,
+  yani handler eklenen site kutuya da kendiliğinden düşer.
+- Bir kareye dokununca **adres çubuğu kaybolur**, sayfa tüm ekranı alır. Ana
+  sayfaya dönüş: **Tarayıcı sekmesine tekrar dokun** ya da **sol kenardan sağa
+  kaydır** (kaydırma önce sayfa geçmişinde geri gider, geçmiş bitince ana
+  sayfaya çıkar). Web görünümü yıkılmaz; "kaldığın yere dön" satırı seni aynı
+  kaydırma konumuna geri koyar.
+- Sitelerin üstündeki eklenti butonları **görünmez** — silinmediler, çünkü bir
+  küçük resmin arkasındaki gerçek dosya URL'sini yalnızca onlar biliyor. Yüzen
+  buton medyayı ekrandaki konumundan bulur, üstündeki butonu kendi tıklar.
+- **Yüzen buton**: kısa dokunuş ekranın ortasındaki medyayı indirir; **basılı
+  tutunca** sayfadaki tüm medya numaralanır ve numaraya dokunarak seçersin. Tek
+  dokunuş → ilerleme kartı → "Fotoğraflara kaydedildi". Paylaşım sayfası yok.
 - **Reddit'te** sol altta saydam arama butonu: bir dokunuş 2.5 saniyeliğine
   belirginleştirir, bu süre içinde ikinci dokunuş arama menüsünü açar; süre
   dolarsa tekrar saydamlaşır. Seçilen sağlayıcılar (Reddit / Old / Google /
@@ -87,8 +99,15 @@ fazla 3 sideload uygulama.
 - **Galeri** sekmesi: bu uygulamanın indirdikleri, Fotoğraflar'dan orijinal
   kalitede. Fotoğraflar'da Gizli klasörüne taşınan öğe galeriden de kaybolur;
   Fotoğraflar'dan silinen de. Basılı tutarak yalnızca listeden çıkarılabilir.
-- **Ayarlar** sekmesi: indirme katmanını tümden aç/kapat, site site butonlar,
-  buton boyutu, açılış sayfası.
+- **Ayarlar** sekmesi: yüzen butonun boyutu ve sol/sağ konumu, Reddit arama
+  balonu, desteklenen site listesi, site simgelerini yenile. "İndirme katmanını
+  kapat" ya da site site buton anahtarları yok — uygulamanın tek işi indirmek,
+  ve sayfa butonları artık UI değil, gizli birer çözümleyici.
+
+Arayüz iOS 26'nın **Liquid Glass** API'lerini kullanır (`glassEffect`,
+`GlassEffectContainer`). Dağıtım hedefi 17.0 olduğu için hepsi
+`if #available(iOS 26.0, *)` arkasında; eski sürümde `.ultraThinMaterial`
+tabanlı taklit devreye girer. Tek yer: `Sources/Support/LiquidGlass.swift`.
 
 ## Sınırlar
 
