@@ -69,9 +69,15 @@ yerine yeni ücretsiz bir proje de açabilirsin; SQL aynı.)
 sapsal-panel'i nasıl kurduysan aynısı:
 
 1. Cloudflare → **Workers & Pages** → **Create** → **Pages** → Git repo bağla
-   (`TasuDownloader`) ya da **Upload assets** ile `cloud/web/public` yükle.
-   - Git bağlarsan: **Root directory = `cloud/web`**, **Build output
-     directory = `public`**, build komutu boş.
+   (`TasuDownloader`).
+   - **Root directory (advanced)** başlığını aç → `cloud/web` yaz. Bu adım
+     atlanırsa build **kesin başarısız olur**: Cloudflare depo kökünde
+     `public` arar, bulamaz.
+   - **Framework preset = None**, **Build command = boş**, **Build output
+     directory = `public`**.
+   - Ayar sonradan da düzeltilebilir: proje → Settings → Builds &
+     deployments → Build configuration → düzenle → Deployments sekmesinden
+     **Retry deployment**.
 2. **Settings → Environment variables** (Production + Preview):
 
 | Değişken | Değer |
