@@ -85,4 +85,18 @@ jobs:
           gh release view latest >/dev/null 2>&1 || \
             gh release create latest --title "TasuDownloader (latest)" \
               --notes "Her push'ta güncellenen son derleme."
+
+          # The release is created once and then only ever uploaded to, so it
+          # kept the old product name and an .ipa from before the rename —
+          # a stale build sitting on a URL that claims to be current. Reconcile
+          # every run instead of only at creation, and drop anything that is
+          # not the build this run just produced.
+          gh release edit latest --title "TasuDownloader (latest)"
+          gh release view latest --json assets --jq '.assets[].name' \
+            | grep -vx "TasuDownloader.ipa" \
+            | while read -r stale; do
+                echo "Eski varlık siliniyor: $stale"
+                gh release delete-asset latest "$stale" --yes
+              done
+
           gh release upload latest dist/TasuDownloader.ipa --clobber
