@@ -1,0 +1,128 @@
+{
+  "manifest_version": 3,
+  "name": "RedGifs Downloader",
+  "version": "0.24.4",
+  "description": "Downloads accessible RedGifs videos from Redgifs and supported embeds.",
+  "permissions": [
+    "tabs",
+    "downloads",
+    "scripting",
+    "clipboardRead",
+    "clipboardWrite",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://redgifs.com/*",
+    "https://*.redgifs.com/*",
+    "https://ripsnip.com/*",
+    "https://www.ripsnip.com/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://redgifs.com/*",
+        "https://*.redgifs.com/*"
+      ],
+      "js": [
+        "page-hook-redgifs.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://redgifs.com/*",
+        "https://*.redgifs.com/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "content-folders.js",
+        "content-redgifs.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://ripsnip.com/*",
+        "https://www.ripsnip.com/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "content-ripsnip.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://reddit.com/*",
+        "https://www.reddit.com/*",
+        "https://new.reddit.com/*",
+        "https://old.reddit.com/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "content-folders.js",
+        "content-reddit.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://scrolller.com/*",
+        "https://www.scrolller.com/*",
+        "https://*.scrolller.com/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "content-folders.js",
+        "content-scrolller-v2.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://coomer.st/*",
+        "https://www.coomer.st/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "content-coomer.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.instagram.com/*",
+        "https://instagram.com/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "content-folders.js",
+        "content-instagram.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "RedGifs Downloader",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    }
+  }
+}

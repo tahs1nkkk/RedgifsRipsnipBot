@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Downloader Debug Rehberi</title>
+    <link rel="stylesheet" href="debug-guide.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">RedGifs Downloader</p>
+        <h1>Hızlı Debug Rehberi</h1>
+        <p class="subtitle">Her testi sırayla çalıştır, sonucu işaretle ve tek log dosyası oluştur.</p>
+      </div>
+      <div class="top-actions">
+        <button id="copyLog" class="secondary">Logu kopyala</button>
+        <button id="downloadLog" class="secondary">JSON indir</button>
+        <button id="resetSession" class="danger">Sıfırla</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <div class="progress-head">
+          <strong id="progressLabel">0 / 0</strong>
+          <span id="versionLabel"></span>
+        </div>
+        <div class="progress-track"><div id="progressBar"></div></div>
+        <nav id="siteSummary" aria-label="Site test durumu"></nav>
+        <div class="legend">
+          <span><i class="dot pending"></i>Bekliyor</span>
+          <span><i class="dot passed"></i>Çalışıyor</span>
+          <span><i class="dot failed"></i>Çalışmıyor</span>
+          <span><i class="dot skipped"></i>Atlandı</span>
+        </div>
+      </aside>
+
+      <section class="card" aria-live="polite">
+        <div class="step-meta">
+          <span id="siteBadge" class="site-badge"></span>
+          <span id="stepNumber"></span>
+        </div>
+        <h2 id="stepTitle"></h2>
+        <p id="stepInstruction" class="instruction"></p>
+
+        <div id="expectedPanel" class="expected">
+          <span>Beklenen sonuç</span>
+          <p id="stepExpected"></p>
+        </div>
+
+        <div id="stepTools" class="step-tools">
+          <button id="openSite" class="secondary">Test sayfasını aç</button>
+          <button id="backStep" class="ghost">Önceki adım</button>
+          <button id="skipStep" class="ghost">Atla</button>
+        </div>
+
+        <div id="decisionPanel" class="decision-panel">
+          <p>Bu test beklendiği gibi çalıştı mı?</p>
+          <div>
+            <button id="markPassed" class="pass">Çalışıyor</button>
+            <button id="markFailed" class="fail">Çalışmıyor</button>
+          </div>
+        </div>
+
+        <div id="failurePanel" class="failure-panel" hidden>
+          <h3>Tanı çıktısını topla</h3>
+          <ol>
+            <li>Test sayfasında <kbd>F12</kbd> tuşuna bas ve <strong>Console</strong> sekmesini aç.</li>
+            <li>Aşağıdaki komutu kopyalayıp konsola yapıştır. DevTools engellerse önce elle <kbd>allow pasting</kbd> yaz.</li>
+            <li>Komut çıktıyı hem konsolda gösterir hem panoya kopyalar. Bu penceredeki alana yapıştır; varsa ilgili <code>[rg-*]</code> hata satırlarını da altına ekle.</li>
+          </ol>
+          <div class="command-row">
+            <pre id="diagnosticCommand"></pre>
+            <button id="copyCommand" class="secondary">Komutu kopyala</button>
+          </div>
+          <label>
+            Konsol çıktısı
+            <textarea id="diagnosticOutput" rows="9" placeholder="Kopyalanan JSON çıktısını buraya yapıştır..."></textarea>
+          </label>
+          <label>
+            Kısa not
+            <textarea id="failureNote" rows="3" placeholder="Buton görünmedi, yanlış dosya indi, klasör hatalı vb."></textarea>
+          </label>
+          <div class="failure-actions">
+            <button id="cancelFailure" class="ghost">Geri dön</button>
+            <button id="saveFailure" class="fail">Kaydet ve ilerle</button>
+          </div>
+        </div>
+
+        <div id="finishedPanel" class="finished-panel" hidden>
+          <h2>Test turu tamamlandı</h2>
+          <p id="finishedSummary"></p>
+          <p>JSON logunu indirip bu konuşmaya ekle. Başarısız adımlar ve tanı çıktıları birlikte incelenecek.</p>
+          <button id="downloadLogFinal" class="primary">Debug logunu indir</button>
+        </div>
+
+        <p id="toast" class="toast" role="status"></p>
+      </section>
+    </main>
+
+    <script src="debug-guide.js"></script>
+  </body>
+</html>

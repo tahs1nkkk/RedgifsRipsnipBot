@@ -1,0 +1,122 @@
+{
+  "manifest_version": 2,
+  "name": "RedGifs Downloader (iOS)",
+  "version": "0.24.4",
+  "description": "Adds download buttons to RedGifs, Reddit, Scrolller, Coomer and Instagram, and saves media to Photos through the iOS share sheet.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "redgifs-downloader-ios@local",
+      "strict_min_version": "60.0"
+    }
+  },
+  "permissions": [
+    "storage",
+    "clipboardRead",
+    "clipboardWrite",
+    "https://*/*"
+  ],
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "web_accessible_resources": [
+    "page-hook-redgifs.js"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://redgifs.com/*",
+        "https://*.redgifs.com/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "ios-bridge.js",
+        "content-folders.js",
+        "content-redgifs.js"
+      ],
+      "css": [
+        "ios-mobile.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://reddit.com/*",
+        "https://www.reddit.com/*",
+        "https://new.reddit.com/*",
+        "https://old.reddit.com/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "ios-bridge.js",
+        "content-folders.js",
+        "content-reddit.js"
+      ],
+      "css": [
+        "ios-mobile.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://scrolller.com/*",
+        "https://www.scrolller.com/*",
+        "https://*.scrolller.com/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "ios-bridge.js",
+        "content-folders.js",
+        "content-scrolller-v2.js"
+      ],
+      "css": [
+        "ios-mobile.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://coomer.st/*",
+        "https://www.coomer.st/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "ios-bridge.js",
+        "content-coomer.js"
+      ],
+      "css": [
+        "ios-mobile.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.instagram.com/*",
+        "https://instagram.com/*"
+      ],
+      "js": [
+        "common/settings.js",
+        "ios-bridge.js",
+        "content-folders.js",
+        "content-instagram.js"
+      ],
+      "css": [
+        "ios-mobile.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_action": {
+    "default_title": "RedGifs Downloader",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    }
+  }
+}

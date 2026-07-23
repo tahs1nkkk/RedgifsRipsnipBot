@@ -1,0 +1,186 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ios-bridge harness</title>
+<style>body{font:14px system-ui;padding:16px;background:#111;color:#eee}li{margin:4px 0}.p{color:#4ade80}.f{color:#f87171}pre{white-space:pre-wrap;color:#94a3b8}</style>
+<h1>ios-bridge harness</h1>
+<ul id="out"></ul>
+<script>
+  // Minimal stand-in for the extension environment: no chrome.storage, so the
+  // bridge's localStorage polyfill is exercised too.
+  window.chrome = {
+    runtime: {
+      getURL: (p) => new URL(p, location.href).href,
+      sendMessage: function nativeSendMessage() { throw new Error("native sendMessage should never run"); }
+    }
+  };
+  window.__nativeSendMessage = window.chrome.runtime.sendMessage;
+
+  // Deterministic share layer. The real navigator.share() needs a user gesture,
+  // and on a desktop browser it would either open an OS dialog or fall through
+  // to a real file download in the middle of the run.
+  window.__shareCalls = [];
+  window.__shareResult = "NotAllowedError";
+  Object.defineProperty(navigator, "canShare", { value: () => true, configurable: true });
+  Object.defineProperty(navigator, "share", {
+    configurable: true,
+    value: (data) => {
+      window.__shareCalls.push(data);
+      if (window.__shareResult === "ok") return Promise.resolve();
+      const error = new Error("stub");
+      error.name = window.__shareResult;
+      return Promise.reject(error);
+    }
+  });
+</script>
+<script src="orion-ios/common/settings.js"></script>
+<script src="orion-ios/ios-bridge.js"></script>
+<script>
+const out = document.getElementById("out");
+const results = [];
+function check(name, ok, detail) {
+  results.push(ok);
+  const li = document.createElement("li");
+  li.className = ok ? "p" : "f";
+  li.textContent = `${ok ? "PASS" : "FAIL"} — ${name}`;
+  if (detail) { const pre = document.createElement("pre"); pre.textContent = detail; li.appendChild(pre); }
+  out.appendChild(li);
+}
+const send = (msg) => chrome.runtime.sendMessage(msg);
+const panel = () => document.getElementById("rg-ios-bridge")?.shadowRoot;
+const IMG = "https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png";
+
+(async () => {
+  check("bridge loaded", globalThis.__rgIosBridgeLoaded === true);
+  check("sendMessage patched", chrome.runtime.sendMessage !== window.__nativeSendMessage);
+
+  // storage polyfill
+  await new Promise((r) => chrome.storage.local.set({ rgRipsnipSettings: { buttonSize: 61 } }, r));
+  const got = await new Promise((r) => chrome.storage.local.get("rgRipsnipSettings", r));
+  check("storage polyfill roundtrip", got?.rgRipsnipSettings?.buttonSize === 61, JSON.stringify(got));
+
+  // A phone cannot honour hover-gated buttons, a Right Shift shortcut or a 30px
+  // target, so the bridge overrides them on read whatever the store holds.
+  await new Promise((r) => chrome.storage.local.set({ rgRipsnipSettings: { buttonVisibility: "hover", rightShiftDownload: true, buttonSize: 30 } }, r));
+  const forced = (await new Promise((r) => chrome.storage.local.get("rgRipsnipSettings", r)))?.rgRipsnipSettings;
+  check("mobile settings forced on read",
+    forced?.buttonVisibility === "always" && forced?.rightShiftDownload === false && forced?.buttonSize >= 48,
+    JSON.stringify(forced));
+
+  // Handlers that ask for the whole store must get the overrides too.
+  const wide = await new Promise((r) => chrome.storage.local.get(null, r));
+  check("overrides survive a get(null)", wide?.rgRipsnipSettings?.buttonVisibility === "always", JSON.stringify(wide?.rgRipsnipSettings));
+
+  // Unrelated reads must not grow a settings key they never asked for.
+  const other = await new Promise((r) => chrome.storage.local.get("somethingElse", r));
+  check("unrelated reads left alone", !("rgRipsnipSettings" in (other || {})), JSON.stringify(other));
+
+  // Scrolller's controls live in a shadow root the manifest stylesheet cannot
+  // reach, so the bridge has to push the touch overrides in itself — including
+  // into hosts the handler recreates after load.
+  const host = document.createElement("div");
+  host.id = "rg-scrolller-card-buttons";
+  const shadow = host.attachShadow({ mode: "open" });
+  shadow.innerHTML = `<style>button{all:initial;width:38px;height:38px;display:grid;touch-action:none}</style><button id="b"></button>`;
+  document.documentElement.appendChild(host);
+  await new Promise((r) => setTimeout(r, 50));
+  const shadowBtn = shadow.getElementById("b");
+  check("shadow-root buttons reach 44px",
+    shadowBtn.getBoundingClientRect().width >= 44 && getComputedStyle(shadowBtn).touchAction === "manipulation",
+    `${shadowBtn.getBoundingClientRect().width}px touch-action=${getComputedStyle(shadowBtn).touchAction}`);
+  host.remove();
+
+  // OPEN_TAB
+  let opened = null;
+  const realOpen = window.open;
+  window.open = (u) => { opened = u; return null; };
+  const tab = await send({ type: "OPEN_TAB", url: "https://example.com/x" });
+  check("OPEN_TAB opens a tab", tab?.ok === true && opened === "https://example.com/x", `resp=${JSON.stringify(tab)} opened=${opened}`);
+
+  // START_RIPSNIP is intentionally unsupported
+  const rip = await send({ type: "START_RIPSNIP", url: "https://redgifs.com/watch/x" });
+  check("START_RIPSNIP rejected cleanly", rip?.ok === false && /IOS03/.test(rip.error), JSON.stringify(rip));
+
+  // empty url list
+  const empty = await send({ type: "DIRECT_DOWNLOAD", urls: [] });
+  check("empty url list rejected", empty?.ok === false && /IOS01/.test(empty.error), JSON.stringify(empty));
+
+  // real image download -> queued and ready to share
+  window.__shareCalls.length = 0;
+  const ok = await send({ type: "DIRECT_DOWNLOAD", urls: [IMG], imageMode: true, fallbackSourceUrl: "https://reddit.com/r/x" });
+  const saveBtn = panel()?.querySelector(".save");
+  check("image download queued", ok?.ok === true && ok.mode === "image", JSON.stringify(ok));
+  check("panel visible and save enabled", panel()?.querySelector(".card")?.classList.contains("on") === true && saveBtn?.disabled === false);
+  check("filename derived from url", panel()?.querySelector(".name")?.textContent === "PNG_transparency_demonstration_1.png", panel()?.querySelector(".name")?.textContent);
+
+  // One tap is the goal: the share sheet is attempted straight after the fetch.
+  check("share attempted without a second tap",
+    window.__shareCalls.length === 1 && window.__shareCalls[0]?.files?.[0]?.name === "PNG_transparency_demonstration_1.png",
+    JSON.stringify(window.__shareCalls.map((c) => c?.files?.[0]?.name)));
+
+  // A fetch that outlived the tap loses the activation. That is the expected
+  // outcome for a big file, so it must re-arm the button, not report a failure.
+  check("lost activation re-arms rather than errors",
+    panel().querySelector(".msg").textContent.startsWith("Hazır") && panel().querySelector(".save").disabled === false,
+    panel().querySelector(".msg").textContent);
+
+  // "Save or open in a tab" is not a choice worth offering over a file that
+  // downloaded fine; the escape hatch belongs to the failure path only.
+  check("escape hatch hidden on a ready file",
+    getComputedStyle(panel().querySelector(".ghost")).display === "none",
+    getComputedStyle(panel().querySelector(".ghost")).display);
+
+  // candidate list: first URL dead, second good
+  const fallback = await send({ type: "DIRECT_DOWNLOAD", urls: ["https://upload.wikimedia.org/definitely-missing-9f3.png", IMG], imageMode: true });
+  check("falls through to next candidate", fallback?.ok === true && fallback.url === IMG, JSON.stringify(fallback));
+
+  // all candidates dead
+  const dead = await send({ type: "DIRECT_DOWNLOAD", urls: ["https://upload.wikimedia.org/nope-a.png", "https://upload.wikimedia.org/nope-b.png"] });
+  // The HTTP status has to survive the second credentials attempt's CORS error,
+  // or a dead link reports as a generic network failure.
+  check("all-dead candidates reported", dead?.ok === false && /IOS02/.test(dead.error) && /HTTP 404/.test(dead.error), JSON.stringify(dead));
+  check("escape hatch appears once a download fails",
+    getComputedStyle(panel().querySelector(".ghost")).display !== "none",
+    getComputedStyle(panel().querySelector(".ghost")).display);
+
+  // Regression: a failed batch must not leave a blob-less placeholder at the
+  // head of the queue, or the next successful save would try to share nothing.
+  panel().querySelector(".x").click();
+  await send({ type: "DIRECT_DOWNLOAD", urls: ["https://upload.wikimedia.org/nope-c.png"] });
+  const after = await send({ type: "DIRECT_DOWNLOAD", urls: [IMG], imageMode: true });
+  check("failure leaves no placeholder in queue",
+    after?.ok === true && panel().querySelector(".save").disabled === false && panel().querySelector(".msg").textContent.startsWith("Hazır"),
+    `${JSON.stringify(after)} msg=${panel().querySelector(".msg").textContent}`);
+
+  // A dismissed sheet must keep the file so the button can retry it.
+  panel().querySelector(".x").click();
+  window.__shareResult = "AbortError";
+  await send({ type: "DIRECT_DOWNLOAD", urls: [IMG], imageMode: true });
+  check("dismissed sheet keeps the file queued",
+    panel().querySelector(".save").disabled === false && panel().querySelector(".name").textContent === "PNG_transparency_demonstration_1.png",
+    panel().querySelector(".msg").textContent);
+  window.__shareResult = "NotAllowedError";
+
+  const saveCss = getComputedStyle(panel().querySelector(".save"));
+  check("save button meets 44px touch target",
+    panel().querySelector(".save").getBoundingClientRect().height >= 44,
+    `${panel().querySelector(".save").getBoundingClientRect().height}px / min-height ${saveCss.minHeight}`);
+
+  // Last on purpose: a cleared queue auto-hides the panel on a 1.6s timer, which
+  // would measure as display:none in any check that ran after it.
+  panel().querySelector(".x").click();
+  window.__shareResult = "ok";
+  window.__shareCalls.length = 0;
+  const auto = await send({ type: "DIRECT_DOWNLOAD", urls: [IMG], imageMode: true });
+  check("successful auto-share clears the queue",
+    auto?.ok === true && window.__shareCalls.length === 1 && panel().querySelector(".msg").textContent === "Kaydedildi.",
+    `${JSON.stringify(auto)} msg=${panel().querySelector(".msg").textContent}`);
+
+  window.open = realOpen;
+  const passed = results.filter(Boolean).length;
+  document.title = `${passed}/${results.length} passed`;
+  const h = document.createElement("h2");
+  h.textContent = `${passed}/${results.length} passed`;
+  h.className = passed === results.length ? "p" : "f";
+  out.after(h);
+})();
+</script>

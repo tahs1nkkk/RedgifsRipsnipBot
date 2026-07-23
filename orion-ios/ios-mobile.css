@@ -1,0 +1,128 @@
+/*
+ * Mobile overrides for the Orion / iOS build.
+ *
+ * The desktop handlers fade their buttons in on :hover, which a touch screen
+ * never fires, so every one of them stays at opacity 0 on the phone. These rules
+ * are !important on purpose: the handlers' own stylesheets are plain
+ * declarations, so !important wins no matter which stylesheet lands last.
+ *
+ * Loaded from the manifest for every matched site. Anything that needs a JS
+ * decision instead lives in ios-bridge.js — including Scrolller, whose controls
+ * sit in a shadow root that no selector here can cross.
+ */
+
+:root {
+  /* Orion keeps a toolbar at the bottom of the screen; fixed UI has to clear it
+     or it renders behind the browser chrome and looks missing. */
+  --rg-ios-bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
+}
+
+/* ---------------------------------------------------- always-visible buttons */
+
+#rg-ripsnip-helper-button,
+#rg-ripsnip-viewer-button,
+#rg-ripsnip-avatar-button,
+.rg-ripsnip-tile-button,
+.rg-downloader-reddit-button,
+.rg-downloader-reddit-multi-button,
+.rg-coomer-download,
+#rg-ig-one,
+#rg-ig-all {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+/* Apple's minimum touch target. The handlers size these from the buttonSize
+   setting, which ios-bridge.js floors at 48px; this catches the rest. */
+#rg-ripsnip-helper-button,
+#rg-ripsnip-viewer-button,
+#rg-ripsnip-avatar-button,
+.rg-ripsnip-tile-button,
+.rg-downloader-reddit-button,
+.rg-downloader-reddit-multi-button,
+.rg-coomer-download,
+#rg-ig-one,
+#rg-ig-all,
+#rg-reddit-search-trigger {
+  min-width: 44px !important;
+  min-height: 44px !important;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* :hover styles latch on iOS after a tap and stay stuck until you tap elsewhere,
+   so drop the hover-only scale/colour shifts entirely. */
+@media (hover: none) {
+  #rg-ripsnip-helper-button:hover,
+  #rg-ripsnip-viewer-button:hover,
+  #rg-ripsnip-avatar-button:hover,
+  .rg-ripsnip-tile-button:hover,
+  .rg-downloader-reddit-button:hover,
+  .rg-downloader-reddit-multi-button:hover,
+  .rg-coomer-download:hover,
+  #rg-ig-one:hover,
+  #rg-ig-all:hover,
+  #rg-reddit-search-trigger:hover {
+    transform: none !important;
+  }
+}
+
+/* ------------------------------------------------------- redgifs viewer button */
+
+/* RedGifs draws its own menu control on the video's top-left corner, exactly
+   where this button lands, so ours ends up behind it. The handler sets `top`
+   inline from the measured video box, so shift with a margin instead of fighting
+   that number — a stylesheet !important still outranks a plain inline style, and
+   the button keeps tracking the video when the layout moves. */
+#rg-ripsnip-viewer-button {
+  margin-top: calc(var(--rg-ripsnip-button-size, 48px) + 10px) !important;
+}
+
+/* ------------------------------------------------- reddit user search widget */
+
+#rg-reddit-search-trigger {
+  bottom: var(--rg-ios-bottom) !important;
+  left: 16px !important;
+  top: auto !important;
+  right: auto !important;
+  width: 52px !important;
+  height: 52px !important;
+}
+
+#rg-reddit-search-panel {
+  bottom: calc(var(--rg-ios-bottom) + 62px) !important;
+  left: 12px !important;
+  right: 12px !important;
+  top: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  max-height: 60vh !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ------------------------------------------------------------- popup menus */
+
+#rg-folder-menu,
+#rg-ig-menu {
+  max-width: calc(100vw - 24px) !important;
+  max-height: 60vh !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+#rg-folder-menu .rg-fm-item,
+#rg-ig-menu .rg-ig-menu-item {
+  min-height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Safari zooms the whole page when a focused field is under 16px. */
+#rg-reddit-search-panel input,
+#rg-reddit-search-panel select,
+#rg-folder-menu input {
+  font-size: 16px !important;
+}

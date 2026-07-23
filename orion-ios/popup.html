@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="popup.css">
+    <title>RedGifs Downloader</title>
+  </head>
+  <body>
+    <main class="panel">
+      <header class="topbar">
+        <div class="brand">
+          <img src="icon.svg" alt="" aria-hidden="true">
+          <div>
+            <h1>RedGifs Downloader</h1>
+            <span id="version"></span>
+          </div>
+        </div>
+      </header>
+
+      <details class="site" open>
+        <summary>Redgifs</summary>
+        <div class="site-body">
+          <label class="row">
+            <span>
+              <strong>Profil fotoğrafı indirme</strong>
+              <small>Profil avatarına indirme butonu ekler</small>
+            </span>
+            <input type="checkbox" data-setting="redgifsAvatarDownload">
+          </label>
+        </div>
+      </details>
+
+      <details class="site">
+        <summary>Reddit</summary>
+        <div class="site-body">
+          <label class="row">
+            <span>
+              <strong>Görselleri indirme</strong>
+              <small>Reddit görsel postları için</small>
+            </span>
+            <input type="checkbox" data-setting="redditImages">
+          </label>
+
+          <label class="row">
+            <span>
+              <strong>Profil resimlerinde buton gizle</strong>
+              <small>Reddit avatarlarını dışarıda bırakır</small>
+            </span>
+            <input type="checkbox" data-setting="hideRedditProfileAvatars">
+          </label>
+        </div>
+      </details>
+
+      <details class="site">
+        <summary>Scrolller</summary>
+        <div class="site-body">
+          <label class="row">
+            <span>
+              <strong>İndirme butonu</strong>
+              <small>Her medya kartının sol üstünde buton</small>
+            </span>
+            <input type="checkbox" data-setting="scrolllerButtons">
+          </label>
+        </div>
+      </details>
+
+      <details class="site">
+        <summary>Coomer</summary>
+        <div class="site-body">
+          <label class="row">
+            <span>
+              <strong>Post eklerinde indirme butonu</strong>
+              <small>Profil önizlemelerini atlar, post içindeki gerçek ekleri kullanır</small>
+            </span>
+            <input type="checkbox" data-setting="coomerButtons">
+          </label>
+        </div>
+      </details>
+
+      <details class="site">
+        <summary>Instagram</summary>
+        <div class="site-body">
+          <label class="row">
+            <span>
+              <strong>İndirme butonu</strong>
+              <small>Post/reel medyası ve profil fotoğrafı (mavi: tekli, pembe: tümü)</small>
+            </span>
+            <input type="checkbox" data-setting="instagramButtons">
+          </label>
+        </div>
+      </details>
+
+      <details class="site">
+        <summary>Genel</summary>
+        <div class="site-body">
+          <label class="stack">
+            <span>
+              <strong>İndirme butonu boyutu</strong>
+              <small><output id="buttonSizeValue"></output></small>
+            </span>
+            <input type="range" min="48" max="72" step="2" data-setting="buttonSize">
+          </label>
+        </div>
+      </details>
+
+      <details class="site">
+        <summary>iOS sürümünde olmayanlar</summary>
+        <div class="site-body">
+          <p class="folder-status">
+            Butonlar her zaman görünür — dokunmatik ekranda hover yok.
+          </p>
+          <p class="folder-status">
+            Klasör ayarları yok: medya Photos'a kaydediliyor ve Photos'ta klasör yok.
+          </p>
+          <p class="folder-status">
+            Ripsnip yedeği, Right Shift kısayolu ve Scrolller öğe seçici iOS'ta çalışmıyor.
+          </p>
+        </div>
+      </details>
+
+      <button id="reset" type="button">Varsayılana dön</button>
+    </main>
+    <script src="common/settings.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

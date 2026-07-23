@@ -1,0 +1,23 @@
+{
+  "name": "redgifs-ripsnip-helper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Single-video browser automation helper for permitted Redgifs links via Ripsnip.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "install-browser": "playwright install chromium",
+    "check": "node scripts/validate-extension.js",
+    "build:ios": "node scripts/build-orion-ios.js",
+    "build:ios:mv2": "node scripts/build-orion-ios.js --mv2",
+    "build:app:js": "node scripts/build-ios-app-js.js",
+    "preview-debug": "node scripts/preview-debug-guide.js",
+    "test": "node tests/settings.test.js && node scripts/validate-extension.js"
+  },
+  "dependencies": {
+    "playwright": "^1.54.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
