@@ -13,9 +13,20 @@ kök nedene oradan dönerim.
 
 ### 0.1 Worker'ı yayına al
 
-```bash
-cd cloud/web && npx wrangler deploy
-```
+**Elle deploy gerekmiyor.** Cloudflare'in Git entegrasyonu bağlı: dala push
+edildiği anda derleyip yayınlıyor. Her push iki adres üretiyor —
+
+- dal önizlemesi: `https://<dal-adı>-tasu-arsiv.lsatvofficial.workers.dev`
+- commit önizlemesi: `https://<hash>-tasu-arsiv.lsatvofficial.workers.dev`
+
+Deploy durumu PR'daki Cloudflare yorumunda görünür. Elle gerekirse:
+`cd cloud/web && npx wrangler deploy`.
+
+⚠️ **Google girişi yalnız asıl adreste çalışır.** OAuth istemcisine kayıtlı
+redirect URI production adresi; önizleme adresinde giriş denenirse Google
+`redirect_uri_mismatch` döndürür. Önizleme adreslerini `/auth/app` ile (yani
+telefondaki Arşiv sekmesiyle) ya da paylaşım linkleriyle sınayabilirsin; tam
+giriş akışı için dal main'e birleştikten sonra asıl adresi kullan.
 
 Secret'lar panelden girilir (Workers & Pages → tasu-arsiv → Settings → Variables
 and Secrets). Kodda hiçbiri yazılı değil:
@@ -32,7 +43,7 @@ and Secrets). Kodda hiçbiri yazılı değil:
 R2 kovası `tasu-media` panelde açık olmalı; `wrangler.jsonc` onu `MEDIA` adıyla
 bağlıyor.
 
-- [ ] `wrangler deploy` hatasız bitti
+- [ ] PR'daki Cloudflare yorumu "Deployment successful" diyor
 - [ ] `https://<worker>.workers.dev/` açılınca **"Tasu Archive v1.1"** ve tek bir
       **"Giriş yap"** düğmesi görünüyor (başka giriş yolu yok)
 - [ ] İzinli Google hesabıyla giriş → arşiv açılıyor
