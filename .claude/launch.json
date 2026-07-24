@@ -12,6 +12,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["wrangler", "dev", "--port", "8792", "--config", "cloud/web/wrangler.jsonc"],
       "port": 8792
+    },
+    {
+      "name": "tasu-arsiv-mock",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["cloud/web/tools/mock-server.mjs", "8793"],
+      "port": 8793
     }
   ]
 }

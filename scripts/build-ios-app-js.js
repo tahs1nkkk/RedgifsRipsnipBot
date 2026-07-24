@@ -102,11 +102,18 @@ const version = JSON.parse(read(shared, "manifest.json")).version;
 // button covering it, and a display:none element reports a zero rect. Kept
 // laid out but transparent, it still measures correctly, and pointer-events
 // keeps a stray tap from firing a download the user did not ask for.
+//
+// Each selector is prefixed with `html ` on purpose. Coomer's button styles
+// itself with `all: initial !important` from a stylesheet the handler injects
+// at runtime — later in the document than this one — so at equal specificity it
+// won its `opacity` back and the buttons reappeared. `html <selector>` outranks
+// the bare class, so the hide wins regardless of injection order.
+const hideSelector = HANDLER_BUTTONS.map((sel) => `html ${sel}`).join(",\n");
 const appCss = `${read(root, "orion-ios", "ios-mobile.css")}
 /* ---- app-only overrides (in-app browser, not Orion) ---- */
 :root { --rg-ios-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); }
 #rg-reddit-search-trigger, #rg-reddit-search-panel { display: none !important; }
-${HANDLER_BUTTONS.join(",\n")} {
+${hideSelector} {
   opacity: 0 !important;
   pointer-events: none !important;
 }

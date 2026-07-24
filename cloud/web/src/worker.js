@@ -1,20 +1,25 @@
 // Cloudflare Worker girişi.
 //
-// Üç iş yapar:
+// Dört iş yapar:
 //  1) /auth/* — Google girişi (auth.js). Site yalnız izinli e-postaya açılır.
-//  2) /api/*  — veri uçları. İki kabul yolu: (a) geçerli oturum çerezi (web
+//     /auth/app ayrıca iOS uygulamasının WebView'ını token ile içeri alır.
+//  2) /s/*    — public paylaşım linkleri. Kasıtlı olarak yetkisiz; token'ın
+//     kendisi yetkidir, süre/adet dolunca kapanır (share.js).
+//  3) /api/*  — veri uçları. İki kabul yolu: (a) geçerli oturum çerezi (web
 //     kullanıcısı Google ile girmiştir) VEYA (b) Bearer ARCHIVE_TOKEN
 //     (telefon uygulaması). Böylece uygulama hiç değişmeden çalışır.
-//  3) diğer   — statik dosyalar (public/). Oturum yoksa Google giriş sayfası.
+//  4) diğer   — statik dosyalar (public/). Oturum yoksa Google giriş sayfası.
 //
-// İş mantığı functions/api/*.js içinde, Pages Functions imzasıyla durur; bu
-// dosya onların üstünde ince bir yönlendirici.
+// İş mantığı functions/api/*.js ve src/*.js içinde; bu dosya onların üstünde
+// ince bir yönlendirici.
 import { json } from "../functions/api/_utils.js";
 import * as health from "../functions/api/health.js";
 import * as lists from "../functions/api/lists.js";
 import * as config from "../functions/api/config.js";
 import { handleMedia } from "./media.js";
-import { finishLogin, loginPage, logout, readSession, startLogin } from "./auth.js";
+import { handleMeta } from "./meta.js";
+import { handleShareApi, handleSharePublic } from "./share.js";
+import { APP_VERSION, appLogin, finishLogin, loginPage, logout, readSession, startLogin } from "./auth.js";
 
 const ROUTES = {
   "/api/health": health,
@@ -62,14 +67,28 @@ export default {
     if (path === "/auth/login") return startLogin(request, env);
     if (path === "/auth/callback") return finishLogin(request, env);
     if (path === "/auth/logout") return logout();
+    if (path === "/auth/app") return appLogin(request, env);
 
-    // 2) Medya (R2) — kendi yetki + yöntem yönlendirmesini yapar; akış için
+    // 2) Public paylaşım — token'la gelen ziyaretçi. Oturum aranmaz.
+    if (path.startsWith("/s/")) return handleSharePublic(request, env, url);
+
+    // 3) Medya (R2) — kendi yetki + yöntem yönlendirmesini yapar; akış için
     //    ?token= de kabul eder (AVPlayer/<video> başlık gönderemez).
-    if (path === "/api/media" || path.startsWith("/api/media/")) {
+    if (path === "/api/media" || path.startsWith("/api/media/") || path.startsWith("/api/thumb/")) {
       return handleMedia(request, env, url);
     }
 
-    // 3) API — oturum çerezi ya da Bearer token gerekir.
+    // 4) Meta ve paylaşım yönetimi — oturum ya da Bearer.
+    if (path === "/api/meta" || path === "/api/share" || path.startsWith("/api/share/")) {
+      if (!(await authorized(request, env))) {
+        return json({ ok: false, error: "yetkisiz" }, 401);
+      }
+      return path === "/api/meta"
+        ? handleMeta(request, env)
+        : handleShareApi(request, env, url);
+    }
+
+    // 5) API — oturum çerezi ya da Bearer token gerekir.
     const route = ROUTES[path];
     if (route) {
       if (!(await authorized(request, env))) {
@@ -81,7 +100,7 @@ export default {
           { Allow: allowedMethods(route).join(", ") });
       }
       return handler({
-        request, env, params: {}, data: {},
+        request, env, params: {}, data: {}, version: APP_VERSION,
         waitUntil: (p) => ctx.waitUntil(p),
         next: () => env.ASSETS.fetch(request)
       });
@@ -89,7 +108,7 @@ export default {
 
     if (path.startsWith("/api/")) return json({ ok: false, error: "bilinmeyen uç" }, 404);
 
-    // 4) Statik — yalnız giriş yapmış kullanıcıya. Yoksa Google giriş sayfası.
+    // 6) Statik — yalnız giriş yapmış kullanıcıya. Yoksa Google giriş sayfası.
     if (await readSession(request, env)) return env.ASSETS.fetch(request);
     return loginPage();
   }

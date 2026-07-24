@@ -9,6 +9,7 @@ struct RootView: View {
         case browser
         case lists
         case gallery
+        case archive
         case settings
     }
 
@@ -23,6 +24,9 @@ struct RootView: View {
             GalleryScreen()
                 .tag(Tab.gallery)
                 .tabItem { Label("Galeri", systemImage: "photo.on.rectangle") }
+            ArchiveScreen()
+                .tag(Tab.archive)
+                .tabItem { Label("Arşiv", systemImage: "square.stack.3d.up") }
             SettingsScreen()
                 .tag(Tab.settings)
                 .tabItem { Label("Ayarlar", systemImage: "gearshape") }

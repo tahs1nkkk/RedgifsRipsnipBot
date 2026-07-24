@@ -186,8 +186,7 @@ export async function finishLogin(request, env) {
   const email = (claims.email || "").toLowerCase();
   const allowed = allowedEmails(env);
   if (!claims.email_verified || !allowed.includes(email)) {
-    return htmlResponse(errorPage("Bu hesap yetkili değil",
-      `${email || "hesap"} bu arşive erişemez. Yalnızca izin verilen adres girebilir.`), 403);
+    return htmlResponse(deniedPage(), 403);
   }
 
   const session = await makeSession(env, email);
@@ -201,6 +200,35 @@ export function logout() {
   return new Response(null, {
     status: 302,
     headers: { Location: "/", "Set-Cookie": cookie(SESSION_COOKIE, "", 0) }
+  });
+}
+
+/// iOS uygulamasının içindeki WKWebView girişi.
+///
+/// Uygulama zaten ARCHIVE_TOKEN'ı taşıyor; kullanıcıyı telefonda ikinci kez
+/// Google'a göndermek anlamsız olurdu. WKWebView ana çerçeve isteğine özel
+/// başlık ekleyebildiği için token URL'e değil Authorization başlığına konur —
+/// böylece Worker günlüklerine ya da geçmişe düşmez.
+export async function appLogin(request, env) {
+  const expected = env.ARCHIVE_TOKEN || "";
+  const header = request.headers.get("Authorization") || "";
+  const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
+  let ok = expected.length > 0 && presented.length === expected.length;
+  if (ok) {
+    let diff = 0;
+    for (let i = 0; i < expected.length; i += 1) diff |= presented.charCodeAt(i) ^ expected.charCodeAt(i);
+    ok = diff === 0;
+  }
+  if (!ok) return htmlResponse(deniedPage(), 403);
+
+  const session = await makeSession(env, "app@tasu");
+  const target = new URL(request.url).searchParams.get("next");
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: target && target.startsWith("/") ? target : "/",
+      "Set-Cookie": cookie(SESSION_COOKIE, session, SESSION_TTL)
+    }
   });
 }
 
@@ -220,51 +248,98 @@ function htmlResponse(body, status = 200) {
   });
 }
 
+export const APP_VERSION = "1.1";
+
 const PAGE_CSS = `
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-    font: 16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
-    background: #0d0c0a; color: #f4efe6; padding: 24px; }
-  .box { width: 100%; max-width: 380px; text-align: center;
-    background: #17150f; border: 1px solid #2a271d; border-radius: 18px; padding: 40px 32px; }
-  h1 { font: 600 15px/1 system-ui; letter-spacing: .14em; text-transform: uppercase;
-    color: #e8a33d; margin: 0 0 4px; }
-  .brand { font: 400 30px/1.1 Georgia, "Times New Roman", serif; margin: 0 0 22px; }
-  p { color: #a49c88; margin: 0 0 26px; font-size: 14px; }
-  .gbtn { display: inline-flex; align-items: center; gap: 12px; width: 100%;
-    justify-content: center; padding: 13px 20px; border-radius: 12px; cursor: pointer;
+  html, body { height: 100%; }
+  body { margin: 0; display: grid; place-items: center; overflow: hidden;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: #08070a; color: #f5f1ea; padding: 24px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+
+  /* Canlı ama sakin bir zemin: iki büyük renk yıkaması, yavaşça soluyor. */
+  .aura { position: fixed; inset: -20%; z-index: 0; filter: blur(90px); opacity: .55;
+    background:
+      radial-gradient(38% 38% at 22% 26%, #7c3aed 0%, transparent 62%),
+      radial-gradient(34% 34% at 78% 22%, #f59e0b 0%, transparent 60%),
+      radial-gradient(40% 40% at 60% 82%, #ec4899 0%, transparent 62%);
+    animation: drift 22s ease-in-out infinite alternate; }
+  @keyframes drift { to { transform: translate3d(0, -4%, 0) scale(1.08); } }
+  @media (prefers-reduced-motion: reduce) { .aura { animation: none; } }
+
+  .box { position: relative; z-index: 1; width: 100%; max-width: 380px; text-align: center;
+    background: rgba(19, 17, 24, .82); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 26px; padding: 44px 32px 36px;
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    box-shadow: 0 30px 70px -30px rgba(0,0,0,.9); }
+
+  .mark { width: 54px; height: 54px; margin: 0 auto 20px; border-radius: 17px;
+    display: grid; place-items: center; font: 800 24px/1 system-ui; color: #1a1206;
+    background: linear-gradient(140deg, #fbbf24, #ec4899 70%, #8b5cf6);
+    box-shadow: 0 12px 30px -10px #ec489988; }
+
+  .brand { margin: 0; font: 700 25px/1.15 system-ui; letter-spacing: -.02em;
+    background: linear-gradient(100deg, #fde68a, #fca5a5 45%, #c4b5fd);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .ver { margin: 6px 0 28px; font-size: 12.5px; color: #8e879c; letter-spacing: .04em; }
+
+  .gbtn { display: inline-flex; align-items: center; gap: 11px; width: 100%;
+    justify-content: center; padding: 14px 20px; border-radius: 15px; cursor: pointer;
     background: #fff; color: #1f1f1f; font: 600 15px system-ui; text-decoration: none;
-    border: none; transition: filter .15s; }
-  .gbtn:hover { filter: brightness(.94); }
+    border: none; transition: transform .16s cubic-bezier(.2,.8,.3,1), box-shadow .16s;
+    box-shadow: 0 10px 24px -12px rgba(0,0,0,.9); }
+  .gbtn:hover { transform: translateY(-2px); box-shadow: 0 16px 32px -12px rgba(0,0,0,.95); }
+  .gbtn:active { transform: translateY(0); }
   .gbtn svg { width: 19px; height: 19px; }
-  .err { color: #f0a4a4; }
-  .muted { font-size: 12px; color: #6f6857; margin-top: 22px; }
+
+  .ghost { display: inline-flex; align-items: center; justify-content: center; width: 100%;
+    margin-top: 12px; padding: 13px 20px; border-radius: 15px; cursor: pointer;
+    background: rgba(255,255,255,.06); color: #e9e4f0; font: 600 14px system-ui;
+    text-decoration: none; border: 1px solid rgba(255,255,255,.12); transition: background .16s; }
+  .ghost:hover { background: rgba(255,255,255,.11); }
+
+  .msg { color: #b6afc4; margin: 0 0 24px; font-size: 14px; }
 `;
 
 const GOOGLE_G = `<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.2 13.2 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-3.1-.4-4.6H24v9.1h12.4c-.5 2.9-2.1 5.4-4.6 7l7.1 5.5c4.2-3.9 6.6-9.6 6.6-16.4.6z"/><path fill="#FBBC05" d="M10.4 28.3c-.5-1.4-.8-2.9-.8-4.3s.3-3 .8-4.3l-7.8-6.1C1 16.6 0 20.2 0 24s1 7.4 2.6 10.4l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.5-2 15.3-5.5l-7.1-5.5c-2 1.4-4.6 2.2-8.2 2.2-6.4 0-11.8-3.7-13.6-8.8l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/></svg>`;
 
+function shell(title, inner) {
+  return `<!doctype html><html lang="tr"><head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#08070a">
+    <title>${title}</title><style>${PAGE_CSS}</style></head><body>
+    <div class="aura"></div><div class="box">${inner}</div></body></html>`;
+}
+
+// Index: tek bir bilgi satırı ve tek bir eylem. Başka hiçbir şey yok — arşivin
+// kapısı, tanıtım sayfası değil.
 export function loginPage() {
-  return htmlResponse(`<!doctype html><html lang="tr"><head>
-    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="robots" content="noindex,nofollow"><title>Tasu Arşiv — Giriş</title>
-    <style>${PAGE_CSS}</style></head><body>
-    <div class="box">
-      <h1>kişisel</h1>
-      <p class="brand">Tasu Arşiv</p>
-      <p>Bu arşiv yalnızca sahibine açık. Google hesabınla giriş yap.</p>
-      <a class="gbtn" href="/auth/login">${GOOGLE_G}<span>Google ile giriş yap</span></a>
-    </div></body></html>`);
+  return htmlResponse(shell("Tasu Archive", `
+      <div class="mark">T</div>
+      <h1 class="brand">Tasu Archive v${APP_VERSION}</h1>
+      <p class="ver">kişisel medya arşivi</p>
+      <a class="gbtn" href="/auth/login">${GOOGLE_G}<span>Giriş yap</span></a>`));
+}
+
+// Yetkisiz hesap: tek cümle, tek çıkış. "Neden" açıklamak da, e-postayı geri
+// yazmak da bilgi sızdırır; kapı kapalıysa kapalıdır.
+function deniedPage() {
+  return shell("Erişim reddedildi", `
+      <div class="mark">✕</div>
+      <h1 class="brand">Erişim reddedildi</h1>
+      <p class="ver">&nbsp;</p>
+      <a class="ghost" href="/auth/logout">Çıkış yap</a>`);
 }
 
 function errorPage(title, detail) {
-  return `<!doctype html><html lang="tr"><head>
-    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${title}</title><style>${PAGE_CSS}</style></head><body>
-    <div class="box">
-      <h1>hata</h1>
-      <p class="brand">${title}</p>
-      <p class="err">${detail}</p>
+  return shell(title, `
+      <div class="mark">!</div>
+      <h1 class="brand">${title}</h1>
+      <p class="ver">&nbsp;</p>
+      <p class="msg">${detail}</p>
       <a class="gbtn" href="/auth/login">${GOOGLE_G}<span>Tekrar dene</span></a>
-    </div></body></html>`;
+      <a class="ghost" href="/auth/logout">Çıkış yap</a>`);
 }

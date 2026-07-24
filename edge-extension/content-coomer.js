@@ -206,6 +206,36 @@
     });
   }
 
+  // --- App floating-button bridge --------------------------------------------
+  // The in-app browser drives downloads from here instead of the visible
+  // buttons. Coomer's creator grids and any pop-up gifs are advertising, so we
+  // only ever vouch for media on an actual post page; everywhere else we return
+  // nothing and the app offers no download (Coomer ad-frame report). Each item
+  // carries the post permalink so the list saves the real link, not the domain.
+  window.__rgSiteName = "coomer.st";
+  window.__rgCollectMedia = () => {
+    if (!isPostPage()) return [];
+    const permalink = location.href;
+    const title = profileName();
+    const out = [];
+    const seen = new Set();
+    for (const anchor of document.querySelectorAll("main a[href]")) {
+      const url = directMediaUrl(anchor.href);
+      if (!url || mediaKind(url) !== "image") continue;
+      const img = anchor.querySelector("img");
+      if (!img || seen.has(img)) continue;
+      seen.add(img);
+      out.push({ el: img, kind: "image", src: url, permalink, title });
+    }
+    for (const video of document.querySelectorAll("main video")) {
+      const url = videoSource(video);
+      if (!url || seen.has(video)) continue;
+      seen.add(video);
+      out.push({ el: video, kind: "video", src: url, permalink, title });
+    }
+    return out;
+  };
+
   new MutationObserver(scheduleScan).observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener("popstate", scheduleScan);
   chrome.storage.onChanged.addListener((changes, area) => {

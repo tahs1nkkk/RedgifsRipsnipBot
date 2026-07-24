@@ -1,441 +1,678 @@
-/*
- * Tasu Arşiv — design system.
+/* Tasu Archive — arayüz.
  *
- * Tek kaynak: aşağıdaki token'lar. Componentler renk/boşluk/radius'u asla
- * hardcode etmez; hepsi semantic token'dan okur. Bilinçli kimlik: koyu, sıcak
- * "arşiv" zemini + kehribar vurgu + serif marka yazısı — her AI sitesindeki
- * mor gradyan estetiği özellikle kullanılmadı.
+ * Tema: koyu bir zemin, üstünde birkaç büyük renk yıkaması ve cam yüzeyler.
+ * Palet kehribar → fuşya → mor; vurgular düz renkle değil gradyanla veriliyor.
+ * Izgaradaki kapaklar zaten renkli, arayüzün onlarla yarışmaması ama cansız da
+ * durmaması gerekiyor.
+ *
+ * iOS uygulamasının WebView'ı <html class="ios"> ile gelir: orada hover yok,
+ * güvenli alan payı var ve cam yüzeyler biraz daha yoğun (SwiftUI tarafındaki
+ * Liquid Glass ile aynı malzemeden görünsün diye).
  */
+
 :root {
   color-scheme: dark;
 
-  /* zemin katmanları */
-  --bg: #0d0c0a;
-  --surface-1: #16140f;
-  --surface-2: #1e1b15;
-  --surface-3: #262218;
+  --bg: #08070a;
+  --surface: rgba(21, 19, 26, .78);
+  --surface-solid: #15131a;
+  --raised: rgba(255, 255, 255, .06);
+  --line: rgba(255, 255, 255, .10);
+  --line-strong: rgba(255, 255, 255, .18);
 
-  /* metin */
-  --text: #f0ece3;
-  --text-muted: #a89f8d;
-  --text-faint: #6e6759;
+  --text: #f5f1ea;
+  --text-dim: #a49dae;
+  --text-faint: #756e83;
 
-  /* vurgu ve semantikler */
-  --accent: #e8a33d;
-  --accent-strong: #f2b95c;
-  --accent-contrast: #201505;
-  --danger: #e5484d;
-  --ok: #46a758;
-  --video: #7fb1ff;
-  --image: #6fd3a7;
+  --amber: #f59e0b;
+  --pink: #ec4899;
+  --violet: #8b5cf6;
+  --sky: #38bdf8;
+  --mint: #34d399;
+  --danger: #f4525f;
 
-  /* çizgiler ve odak */
-  --border: #2e2a20;
-  --border-strong: #453e2e;
-  --focus: #f2b95c;
+  --accent: var(--amber);
+  --grad: linear-gradient(115deg, #fbbf24, #ec4899 55%, #8b5cf6);
 
-  /* tipografi ölçeği */
-  --font-ui: -apple-system, "Segoe UI", system-ui, sans-serif;
-  --font-brand: Georgia, "Times New Roman", serif;
-  --fs-xs: 12px;
-  --fs-sm: 13px;
-  --fs-base: 15px;
-  --fs-lg: 17px;
-  --fs-xl: 22px;
-  --fs-2xl: 30px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
 
-  /* boşluk ölçeği (4 taban) */
-  --sp-1: 4px;
-  --sp-2: 8px;
-  --sp-3: 12px;
-  --sp-4: 16px;
-  --sp-5: 24px;
-  --sp-6: 32px;
-  --sp-7: 48px;
+  --top: 62px;
+  --spring: cubic-bezier(.2, .9, .3, 1);
 
-  /* köşe ve gölge */
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 18px;
-  --r-full: 999px;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, .5);
-  --shadow-2: 0 8px 28px rgba(0, 0, 0, .45);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
 }
 
 * { box-sizing: border-box; }
-html { scrollbar-gutter: stable; }
+html, body { height: 100%; }
+
+/* Tarayıcının [hidden] kuralı en düşük öncelikte: aşağıdaki her `display`
+ * tanımı onu ezer ve gizlenmiş katman görünmez ama tıklanabilir kalır.
+ * Görünürlüğü JS tarafında hep `hidden` ile yönettiğimiz için tek kural
+ * olarak burada kesinleştiriyoruz. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
-  font: var(--fs-base)/1.55 var(--font-ui);
+  background: var(--bg);
   color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button { font-family: inherit; }
+
+.aura {
+  position: fixed; inset: -25%; z-index: 0; pointer-events: none;
+  filter: blur(100px); opacity: .5;
   background:
-    radial-gradient(80vw 50vh at 50% -20%, rgba(232, 163, 61, .07), transparent 65%),
-    var(--bg);
-  min-height: 100vh;
+    radial-gradient(32% 32% at 18% 20%, #7c3aed 0%, transparent 62%),
+    radial-gradient(30% 30% at 82% 16%, #f59e0b 0%, transparent 60%),
+    radial-gradient(34% 34% at 55% 88%, #ec4899 0%, transparent 62%);
+  animation: drift 26s ease-in-out infinite alternate;
 }
+@keyframes drift { to { transform: translate3d(2%, -5%, 0) scale(1.1); } }
 
-/* Hareket bilinçli: sadece anlamlı geçişler; sistem "azalt" diyorsa hepsi kapanır. */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: .01ms !important;
-    transition-duration: .01ms !important;
-  }
-}
+.grow { flex: 1 1 auto; min-width: 0; }
 
-/* ------------------------------------------------------------------ başlık */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 99px;
+  border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.22); background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
 
-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-  padding: var(--sp-3) var(--sp-5);
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  border-bottom: 1px solid var(--border);
-}
-.brand {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  font-family: var(--font-brand);
-}
-.brand h1 { font-size: var(--fs-xl); margin: 0; font-weight: 600; letter-spacing: .2px; }
-.brand .tag {
-  font-size: var(--fs-xs);
-  color: var(--accent);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-full);
-  padding: 1px 8px;
-  font-family: var(--font-ui);
-}
-nav { display: flex; gap: var(--sp-2); }
+/* ======================================================== 1. kapı (chooser) */
 
-/* ------------------------------------------------------------------ butonlar */
+.chooser {
+  position: fixed; inset: 0; z-index: 20;
+  display: grid; grid-template-columns: 1fr 1fr;
+  animation: fadeIn .5s var(--spring) both;
+}
+.chooser.leaving { animation: fadeOut .28s ease forwards; }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes fadeOut { to { opacity: 0; transform: scale(1.03); } }
 
-button {
-  font: 600 var(--fs-sm)/1 var(--font-ui);
-  color: var(--text);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-full);
-  padding: 9px 16px;
-  cursor: pointer;
-  transition: background .15s, border-color .15s, transform .12s;
+.half {
+  position: relative; border: 0; cursor: pointer; color: var(--text);
+  background: transparent; font: inherit; overflow: hidden;
 }
-button:hover { background: var(--surface-3); border-color: var(--border-strong); }
-button:active { transform: translateY(1px); }
-button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-button:focus-visible, input:focus-visible, a:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+.half::before {
+  content: ""; position: absolute; inset: 0;
+  transition: opacity .35s ease, transform .5s var(--spring);
+  transform: scale(1.04);
 }
-.tab[aria-selected="true"] {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--accent-contrast);
-}
-.ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
-.ghost:hover { color: var(--text); background: var(--surface-1); }
-.danger { color: var(--danger); }
-.danger:hover { border-color: var(--danger); }
+.half-lists::before { background: radial-gradient(75% 70% at 30% 45%, #38bdf855, transparent 70%),
+  linear-gradient(160deg, #0d1520, #08070a 70%); }
+.half-media::before { background: radial-gradient(75% 70% at 70% 45%, #ec489955, transparent 70%),
+  linear-gradient(200deg, #1c0f1a, #08070a 70%); }
+.half:hover::before, .half:focus-visible::before { transform: scale(1); opacity: .92; }
 
-/* ------------------------------------------------------------------ düzen */
+.half-lists { border-right: 1px solid rgba(255,255,255,.07); }
 
-main { max-width: 1080px; margin: 0 auto; padding: var(--sp-5) var(--sp-5) var(--sp-7); }
-section[hidden] { display: none !important; }
+.half-inner {
+  position: relative; z-index: 1; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  padding: 24px; transition: transform .35s var(--spring);
+}
+.half:hover .half-inner { transform: translateY(-6px); }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--sp-4);
-}
-.toolbar .grow { flex: 1; min-width: 180px; }
+.half-icon { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 20px;
+  background: rgba(255,255,255,.07); border: 1px solid var(--line); margin-bottom: 8px; }
+.half-icon svg { width: 28px; height: 28px; }
+.half-lists .half-icon { color: var(--sky); box-shadow: 0 14px 40px -18px var(--sky); }
+.half-media .half-icon { color: var(--pink); box-shadow: 0 14px 40px -18px var(--pink); }
 
-input[type="search"], input[type="password"], input[type="url"], input[type="text"] {
-  font: var(--fs-sm)/1.4 var(--font-ui);
-  color: var(--text);
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 10px 13px;
-  width: 100%;
-  transition: border-color .15s;
-}
-input::placeholder { color: var(--text-faint); }
-input:hover { border-color: var(--border-strong); }
-
-.chip {
-  padding: 7px 13px;
-  font-weight: 500;
-}
-.chip[aria-pressed="true"] {
-  background: var(--surface-3);
-  border-color: var(--accent);
-  color: var(--accent-strong);
-}
-
-/* ------------------------------------------------------------------ giriş */
-
-.card {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: var(--sp-6);
-  max-width: 430px;
-  margin: 10vh auto 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-  box-shadow: var(--shadow-2);
-}
-.card h2 { margin: 0; font-size: var(--fs-xl); font-family: var(--font-brand); font-weight: 600; }
-.card p { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); }
-.field { display: flex; flex-direction: column; gap: var(--sp-1); }
-.field span { font-size: var(--fs-xs); color: var(--text-muted); }
-.primary {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--accent-contrast);
-  padding: 12px 16px;
-  font-size: var(--fs-base);
-}
-.primary:hover { background: var(--accent-strong); }
-.error { color: var(--danger); font-size: var(--fs-sm); margin: 0; }
-.muted { color: var(--text-muted); }
-
-/* ------------------------------------------------------------------ istatistik */
-
-.stats {
-  display: flex;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--sp-4);
-}
-.stat {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: var(--sp-2) var(--sp-4);
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  min-width: 110px;
-}
-.stat b { font-size: var(--fs-lg); font-weight: 700; }
-.stat span { font-size: var(--fs-xs); color: var(--text-muted); }
-
-/* ------------------------------------------------------------------ listeler */
-
-.list-block {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  margin-bottom: var(--sp-4);
-  overflow: hidden;
-  box-shadow: var(--shadow-1);
-}
-.list-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
-}
-.list-head h3 { margin: 0; font-size: var(--fs-lg); font-weight: 650; }
-.list-head span { color: var(--text-muted); font-size: var(--fs-xs); white-space: nowrap; }
-.list-block a {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  color: var(--text);
-  text-decoration: none;
-  border-bottom: 1px solid var(--border);
-  transition: background .12s;
-}
-.list-block a:last-child { border-bottom: 0; }
-.list-block a:hover { background: var(--surface-2); }
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: var(--r-full);
-  flex: none;
-}
-.list-block a .title {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-sm);
-  font-weight: 500;
-}
-.list-block a .host { color: var(--text-faint); font-size: var(--fs-xs); white-space: nowrap; }
-
-/* ------------------------------------------------------------------ medya */
-
-.drop {
-  border: 1.5px dashed var(--border-strong);
-  border-radius: var(--r-lg);
-  padding: var(--sp-4);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  margin-bottom: var(--sp-4);
-  transition: border-color .15s, background .15s;
-}
-.drop.armed { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
-.drop button { margin-left: var(--sp-2); }
-
-.media-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--sp-3);
-}
-.media-card {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  overflow: hidden;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  transition: border-color .15s, transform .15s, box-shadow .15s;
-}
-.media-card:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-2);
-}
-.thumb {
-  aspect-ratio: 16 / 10;
-  background: var(--surface-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  position: relative;
-}
-.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.thumb .glyph { font-size: 30px; opacity: .85; }
-.badge {
-  position: absolute;
-  top: var(--sp-2);
-  left: var(--sp-2);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  padding: 2px 9px;
-  border-radius: var(--r-full);
-  background: rgba(0, 0, 0, .55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-.badge.video { color: var(--video); }
-.badge.image { color: var(--image); }
-.media-card .meta {
-  padding: var(--sp-2) var(--sp-3) var(--sp-3);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.media-card .name {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.media-card .sub {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  color: var(--text-faint);
-  font-size: var(--fs-xs);
-}
-
-/* yüklenirken iskelet */
-.skeleton {
-  border-radius: var(--r-md);
-  background: linear-gradient(100deg, var(--surface-1) 40%, var(--surface-2) 50%, var(--surface-1) 60%);
-  background-size: 200% 100%;
-  animation: shimmer 1.3s infinite linear;
-  min-height: 180px;
-  border: 1px solid var(--border);
-}
-@keyframes shimmer { to { background-position: -200% 0; } }
-
-.empty {
-  border: 1px dashed var(--border);
-  border-radius: var(--r-lg);
-  padding: var(--sp-7) var(--sp-4);
-  text-align: center;
-  color: var(--text-muted);
-}
-.empty b { display: block; color: var(--text); margin-bottom: var(--sp-1); font-size: var(--fs-lg); }
-
-/* ------------------------------------------------------------------ inceleme */
-
-dialog {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-lg);
-  background: var(--surface-1);
-  color: var(--text);
-  padding: 0;
-  max-width: min(94vw, 960px);
-  width: 100%;
-  box-shadow: var(--shadow-2);
-}
-dialog::backdrop { background: rgba(6, 5, 3, .78); backdrop-filter: blur(3px); }
-.viewer-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border);
-  font-size: var(--fs-sm);
-}
-.viewer-bar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.viewer-bar .actions { display: flex; gap: var(--sp-2); flex: none; }
-#viewer-body { display: flex; justify-content: center; background: #000; }
-#viewer-body video, #viewer-body img { max-width: 100%; max-height: 76vh; display: block; }
-
-/* ------------------------------------------------------------------ bildirim */
-
-#toast {
-  position: fixed;
-  bottom: var(--sp-5);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--surface-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-full);
-  padding: 10px 18px;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  box-shadow: var(--shadow-2);
-  z-index: 50;
-  transition: opacity .2s, translate .2s;
-}
-#toast[hidden] { display: none; }
-#toast.ok { border-color: var(--ok); }
-#toast.err { border-color: var(--danger); }
-
-/* ------------------------------------------------------------------ mobil */
+.half-title { font-size: 27px; font-weight: 700; letter-spacing: -.02em; }
+.half-sub { font-size: 13px; color: var(--text-dim); }
+.half-count { margin-top: 10px; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  padding: 4px 12px; border-radius: 99px; background: rgba(255,255,255,.07);
+  border: 1px solid var(--line); color: var(--text-dim); }
 
 @media (max-width: 640px) {
-  header { padding: var(--sp-2) var(--sp-3); }
-  main { padding: var(--sp-3) var(--sp-3) var(--sp-6); }
-  .media-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-  .card { margin-top: 4vh; padding: var(--sp-5); }
-  .stat { flex: 1; }
+  .chooser { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+  .half-lists { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .half-title { font-size: 23px; }
+}
+
+/* ============================================================== 2. uygulama */
+
+.app { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column;
+  animation: rise .38s var(--spring) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+
+.topbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+  height: calc(var(--top) + var(--safe-t)); padding: var(--safe-t) 14px 0;
+  background: linear-gradient(180deg, rgba(8,7,10,.92), rgba(8,7,10,.55));
+  backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brand-dot { width: 11px; height: 11px; border-radius: 4px; background: var(--grad);
+  box-shadow: 0 0 14px -2px var(--accent); flex: 0 0 auto; }
+.brand-name { font-size: 15.5px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.brand-ver { font-size: 11px; color: var(--text-faint); letter-spacing: .04em; }
+
+.icon-btn {
+  flex: 0 0 auto; width: 36px; height: 36px; display: grid; place-items: center;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--raised);
+  color: var(--text-dim); cursor: pointer;
+  transition: background .18s, color .18s, transform .18s var(--spring);
+}
+.icon-btn svg { width: 18px; height: 18px; }
+.icon-btn:hover { background: rgba(255,255,255,.12); color: var(--text); transform: translateY(-1px); }
+.icon-btn:active { transform: scale(.94); }
+
+/* "+" → hover'da "+ Dosya Ekle". Genişleme ve renk değişimi aynı anda. */
+.add-btn {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0;
+  height: 36px; padding: 0 9px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--raised); color: var(--text-dim);
+  font: 600 13.5px/1 inherit; overflow: hidden;
+  transition: background .22s var(--spring), color .22s, gap .22s var(--spring),
+              padding .22s var(--spring), box-shadow .22s, transform .18s var(--spring);
+}
+.add-plus { font-size: 19px; line-height: 1; font-weight: 400; }
+.add-label { max-width: 0; opacity: 0; white-space: nowrap;
+  transition: max-width .26s var(--spring), opacity .18s ease; }
+.add-btn:hover, .add-btn:focus-visible, .add-btn.open {
+  background: var(--grad); color: #1a1206; border-color: transparent;
+  gap: 7px; padding: 0 13px 0 11px;
+  box-shadow: 0 10px 26px -12px var(--pink); transform: translateY(-1px);
+}
+.add-btn:hover .add-label, .add-btn:focus-visible .add-label, .add-btn.open .add-label {
+  max-width: 130px; opacity: 1;
+}
+
+/* --------------------------------------------------------- kenar geçişleri */
+
+.edge {
+  position: fixed; top: 50%; transform: translateY(-50%); z-index: 12;
+  width: 40px; height: 92px; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 4px; cursor: pointer; color: var(--text-dim);
+  background: linear-gradient(90deg, rgba(255,255,255,.09), rgba(255,255,255,.03));
+  border: 1px solid var(--line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  transition: width .26s var(--spring), color .2s, background .2s;
+}
+.edge svg { width: 19px; height: 19px; }
+.edge-label { font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  writing-mode: vertical-rl; text-orientation: mixed; opacity: .75; }
+.edge-left { left: 0; border-left: 0; border-radius: 0 var(--r-lg) var(--r-lg) 0; }
+.edge-right { right: 0; border-right: 0; border-radius: var(--r-lg) 0 0 var(--r-lg); }
+.edge:hover { width: 48px; color: var(--text);
+  background: linear-gradient(90deg, rgba(255,255,255,.16), rgba(255,255,255,.05)); }
+.edge[hidden] { display: none; }
+
+/* ------------------------------------------------------------------ sahne */
+
+.stage { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  padding: 18px 56px calc(96px + var(--safe-b)); scroll-behavior: smooth; }
+@media (max-width: 700px) { .stage { padding-left: 44px; padding-right: 44px; } }
+
+.view { max-width: 1320px; margin: 0 auto; animation: slideIn .32s var(--spring) both; }
+.view[hidden] { display: none; }
+.view.from-right { animation-name: slideFromRight; }
+.view.from-left { animation-name: slideFromLeft; }
+@keyframes slideIn { from { opacity: 0; } }
+@keyframes slideFromRight { from { opacity: 0; transform: translateX(26px); } }
+@keyframes slideFromLeft { from { opacity: 0; transform: translateX(-26px); } }
+
+/* ------------------------------------------------------------ araç çubuğu */
+
+.toolbar { display: flex; align-items: center; gap: 9px; margin: 0 0 14px; flex-wrap: wrap; }
+
+.field { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 13px;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--raised);
+  color: var(--text-faint); transition: border-color .2s, background .2s; }
+.field svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.field:focus-within { border-color: var(--line-strong); background: rgba(255,255,255,.10); }
+.field input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--text);
+  font: inherit; outline: none; }
+.field input::placeholder { color: var(--text-faint); }
+.field input::-webkit-search-cancel-button { filter: invert(.6); }
+
+.pill { height: 38px; padding: 0 15px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--raised); color: var(--text-dim);
+  font: 600 13px/1 inherit; white-space: nowrap;
+  transition: background .18s, color .18s, transform .16s var(--spring), border-color .18s; }
+.pill:hover { background: rgba(255,255,255,.12); color: var(--text); transform: translateY(-1px); }
+.pill:active { transform: scale(.96); }
+.pill.on { background: var(--grad); color: #1a1206; border-color: transparent;
+  box-shadow: 0 8px 22px -12px var(--pink); }
+.pill.danger { color: #ffb4bb; border-color: rgba(244,82,95,.32); background: rgba(244,82,95,.14); }
+.pill.danger:hover { background: rgba(244,82,95,.26); color: #fff; }
+
+/* ========================================================== site sekmeleri */
+
+/* Her zaman tek satır: sığmazsa yazı kısalır, sekme alta kaymaz. */
+.site-tabs {
+  position: sticky; top: 0; z-index: 6; display: flex; gap: 8px; margin: -18px -6px 14px;
+  padding: 14px 6px 12px; background: linear-gradient(180deg, rgba(8,7,10,.96) 62%, transparent);
+}
+.site-tab {
+  flex: 1 1 0; min-width: 0; position: relative; cursor: pointer; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--r-md); padding: 9px 6px 8px;
+  background: var(--surface-solid); color: var(--text-dim);
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  transition: transform .2s var(--spring), border-color .2s, color .2s, box-shadow .2s;
+}
+/* Banner: sitenin kendi rengi, tuşun arkasında yumuşak bir yıkama. */
+.site-tab::before { content: ""; position: absolute; inset: 0; opacity: .3;
+  background: var(--tab-grad, linear-gradient(135deg, #444, #222)); transition: opacity .2s; }
+.site-tab > * { position: relative; z-index: 1; }
+.site-tab:hover { transform: translateY(-2px); color: var(--text); border-color: var(--line-strong); }
+.site-tab:hover::before { opacity: .48; }
+.site-tab.on { color: #fff; border-color: transparent; box-shadow: 0 10px 26px -14px var(--tab-glow, #000); }
+.site-tab.on::before { opacity: 1; }
+
+.site-mark { width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center;
+  background: rgba(0,0,0,.32); font: 800 12px/1 inherit; color: #fff;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.site-mark svg { width: 15px; height: 15px; }
+.site-name { font: 700 11.5px/1 inherit; letter-spacing: .02em; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-num { font: 600 10px/1 inherit; opacity: .72; }
+
+@media (max-width: 560px) { .site-name { display: none; } .site-tab { padding: 10px 4px; } }
+
+/* ============================================================= kategoriler */
+
+.cat-bar { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px; }
+.cat-chip { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px;
+  border-radius: 99px; cursor: pointer; font: 600 12.5px/1 inherit; white-space: nowrap;
+  border: 1px solid var(--line); background: var(--raised); color: var(--text-dim);
+  transition: background .18s, color .18s, transform .16s var(--spring); }
+.cat-chip:hover { transform: translateY(-1px); color: var(--text); background: rgba(255,255,255,.11); }
+.cat-chip.on { color: #fff; border-color: transparent; }
+.cat-swatch { width: 8px; height: 8px; border-radius: 3px; flex: 0 0 auto; }
+.cat-caret { width: 13px; height: 13px; opacity: .7; transition: transform .22s var(--spring); }
+.cat-chip.open .cat-caret { transform: rotate(180deg); }
+.cat-kids { display: flex; flex-wrap: wrap; gap: 7px; width: 100%; padding: 2px 0 4px 16px;
+  border-left: 2px solid var(--line); margin-left: 6px; animation: slideIn .22s var(--spring) both; }
+.cat-add { border-style: dashed; color: var(--text-faint); }
+
+/* ================================================================ listeler */
+
+.lists-root { display: flex; flex-direction: column; gap: 26px; }
+
+.list-cat-head { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.list-cat-head h2 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-dim); }
+.list-cat-head .rule { flex: 1 1 auto; height: 1px;
+  background: linear-gradient(90deg, var(--line), transparent); }
+.list-cat-head .badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 99px;
+  background: var(--raised); border: 1px solid var(--line); color: var(--text-faint); }
+
+/* Masaüstünde en çok 4, dar ekranda 1 sütun. minmax'ın alt sınırı hem 240px hem
+   de "genişliğin dörtte biri" — hangisi büyükse o, yani sütun sayısı 4'ü geçmez. */
+.list-grid {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(max(240px, calc((100% - 48px) / 4)), 1fr));
+  align-items: start;
+}
+
+.list-card { border-radius: var(--r-lg); overflow: hidden; background: var(--surface);
+  border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  transition: transform .22s var(--spring), border-color .2s, box-shadow .22s; }
+.list-card:hover { transform: translateY(-3px); border-color: var(--line-strong);
+  box-shadow: 0 22px 44px -26px #000; }
+
+.list-banner { position: relative; height: 84px; background: var(--banner, var(--grad));
+  background-size: cover; background-position: center; }
+.list-banner::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, transparent 30%, rgba(10,9,12,.92)); }
+.list-edit { position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.2); background: rgba(0,0,0,.4); color: #fff;
+  opacity: 0; transition: opacity .2s, background .2s; }
+.list-card:hover .list-edit { opacity: 1; }
+.list-edit:hover { background: rgba(0,0,0,.65); }
+.list-edit svg { width: 14px; height: 14px; }
+
+.list-head { position: relative; margin-top: -34px; padding: 0 14px 12px; z-index: 1;
+  display: flex; align-items: flex-end; gap: 10px; }
+.list-head h3 { margin: 0; font-size: 15.5px; font-weight: 700; letter-spacing: -.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; min-width: 0; }
+.list-count { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 99px;
+  background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.14); color: #fff; white-space: nowrap; }
+.list-toggle { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 9px; cursor: pointer;
+  display: grid; place-items: center; border: 1px solid var(--line); background: var(--raised);
+  color: var(--text-dim); transition: background .18s, color .18s; }
+.list-toggle svg { width: 14px; height: 14px; transition: transform .24s var(--spring); }
+.list-toggle:hover { background: rgba(255,255,255,.13); color: var(--text); }
+.list-card.collapsed .list-toggle svg { transform: rotate(-90deg); }
+
+.list-body { padding: 0 8px 8px; display: grid; grid-template-rows: 1fr;
+  transition: grid-template-rows .28s var(--spring), opacity .2s; }
+.list-card.collapsed .list-body { grid-template-rows: 0fr; opacity: 0; padding-bottom: 0; }
+.list-body > div { overflow: hidden; min-height: 0; }
+
+.list-link { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 10px;
+  text-decoration: none; color: var(--text); transition: background .16s; }
+.list-link:hover { background: rgba(255,255,255,.07); }
+.list-link .dot { width: 7px; height: 7px; border-radius: 99px; flex: 0 0 auto; }
+.list-link .title { flex: 1 1 auto; min-width: 0; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-link .host { font-size: 11px; color: var(--text-faint); flex: 0 0 auto; }
+.list-empty { padding: 10px; font-size: 12.5px; color: var(--text-faint); text-align: center; }
+
+/* =================================================================== medya */
+
+.media-grid { display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(140px, 20vw, 220px), 1fr)); }
+
+.media-card { position: relative; border-radius: var(--r-md); overflow: hidden; cursor: pointer;
+  background: #111015; border: 1px solid var(--line); aspect-ratio: 1; padding: 0;
+  transition: transform .22s var(--spring), border-color .2s, box-shadow .22s,
+              opacity .28s ease, scale .28s var(--spring); }
+.media-card:hover { transform: translateY(-3px); border-color: var(--line-strong);
+  box-shadow: 0 22px 42px -24px #000; }
+/* Silinen kart sayfa yenilenmeden yerinde eriyip gider. */
+.media-card.leaving { opacity: 0; scale: .9; pointer-events: none; }
+
+.media-card img, .media-card video { width: 100%; height: 100%; object-fit: cover; display: block;
+  background: #0b0a0e; transition: transform .4s var(--spring); }
+.media-card:hover img, .media-card:hover video { transform: scale(1.05); }
+.media-card .fallback { width: 100%; height: 100%; display: grid; place-items: center;
+  color: var(--text-faint); font-size: 24px; }
+
+/* İsim alanı: aşağıdan yukarı doğru solan bir perde. */
+.media-name { position: absolute; inset: auto 0 0 0; padding: 26px 10px 9px; pointer-events: none;
+  font-size: 11.5px; line-height: 1.35; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  background: linear-gradient(0deg, rgba(6,5,9,.94) 12%, rgba(6,5,9,.6) 48%, transparent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.media-size { position: absolute; top: 8px; right: 9px; font-size: 10px; font-weight: 700;
+  color: #fff; opacity: 0; padding: 2px 7px; border-radius: 99px; background: rgba(0,0,0,.55);
+  backdrop-filter: blur(6px); transition: opacity .2s; pointer-events: none; }
+.media-card:hover .media-size { opacity: .9; }
+
+/* Videoyu ortadaki play simgesi anlatır — köşedeki "VİDEO" etiketine gerek yok. */
+.play-badge { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.play-badge span { width: 46px; height: 46px; border-radius: 99px; display: grid; place-items: center;
+  background: rgba(10,8,14,.5); border: 1px solid rgba(255,255,255,.28);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  transition: transform .24s var(--spring), background .2s; }
+.play-badge svg { width: 17px; height: 17px; margin-left: 2px; fill: #fff; }
+.media-card:hover .play-badge span { transform: scale(1.12); background: rgba(236,72,153,.55); }
+
+/* Seçim modu */
+.media-card .check { position: absolute; top: 8px; left: 8px; z-index: 2; width: 22px; height: 22px;
+  border-radius: 99px; display: none; place-items: center; border: 2px solid rgba(255,255,255,.85);
+  background: rgba(0,0,0,.4); backdrop-filter: blur(6px); }
+.media-card .check svg { width: 12px; height: 12px; opacity: 0; stroke: #1a1206; }
+body.selecting .media-card .check { display: grid; }
+body.selecting .media-card:hover { transform: none; }
+.media-card.picked { border-color: var(--amber);
+  box-shadow: 0 0 0 2px var(--amber), 0 0 22px -4px var(--amber); }
+.media-card.picked .check { background: var(--amber); border-color: #fff; }
+.media-card.picked .check svg { opacity: 1; }
+
+.skeleton { border-radius: var(--r-md); aspect-ratio: 1; background:
+  linear-gradient(100deg, rgba(255,255,255,.04) 30%, rgba(255,255,255,.10) 50%, rgba(255,255,255,.04) 70%);
+  background-size: 300% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+.empty { grid-column: 1 / -1; text-align: center; padding: 54px 20px; color: var(--text-faint); }
+.empty b { display: block; font-size: 16px; color: var(--text-dim); margin-bottom: 6px; }
+
+/* ----------------------------------------------- istatistik + seçim çubuğu */
+
+.stats-dock, .select-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 14;
+  bottom: calc(16px + var(--safe-b));
+  display: flex; align-items: center; gap: 14px; padding: 9px 18px; border-radius: 99px;
+  background: rgba(18,16,23,.82); border: 1px solid var(--line);
+  backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow: 0 20px 50px -24px #000; animation: dockIn .3s var(--spring) both;
+}
+@keyframes dockIn { from { opacity: 0; transform: translate(-50%, 14px); } }
+.stats-dock[hidden], .select-bar[hidden] { display: none; }
+
+.stat { display: flex; align-items: baseline; gap: 5px; font-size: 12.5px; color: var(--text-faint);
+  white-space: nowrap; }
+.stat b { font-size: 14px; font-weight: 700; color: var(--text); }
+.stat + .stat::before { content: ""; width: 1px; height: 13px; background: var(--line);
+  margin-right: 9px; align-self: center; }
+
+.select-bar { gap: 8px; padding: 8px 10px; max-width: calc(100vw - 24px); overflow-x: auto; }
+.select-bar .pill { height: 32px; padding: 0 12px; font-size: 12px; }
+.sel-count { font-size: 12.5px; font-weight: 700; padding: 0 8px; white-space: nowrap; }
+
+/* ================================================================= çekmece */
+
+.scrim { position: fixed; inset: 0; z-index: 28; background: rgba(4,3,6,.62);
+  backdrop-filter: blur(3px); animation: fadeIn .2s ease both; }
+.scrim[hidden] { display: none; }
+
+.drawer {
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 30; width: min(320px, 86vw);
+  padding: calc(20px + var(--safe-t)) 16px calc(20px + var(--safe-b));
+  background: rgba(16,14,20,.94); border-right: 1px solid var(--line);
+  backdrop-filter: blur(28px) saturate(160%); -webkit-backdrop-filter: blur(28px) saturate(160%);
+  overflow-y: auto; animation: drawerIn .3s var(--spring) both;
+}
+.drawer[hidden] { display: none; }
+@keyframes drawerIn { from { transform: translateX(-100%); } }
+.drawer h2 { margin: 0 0 4px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-faint); }
+.drawer p.hint { margin: 0 0 16px; font-size: 12px; color: var(--text-faint); }
+
+.drive-row { display: flex; align-items: center; gap: 11px; width: 100%; padding: 11px 12px;
+  border-radius: var(--r-md); border: 1px solid var(--line); background: var(--raised);
+  color: var(--text); cursor: pointer; margin-bottom: 8px; font: inherit; text-align: left;
+  transition: background .18s, border-color .18s, transform .16s var(--spring); }
+.drive-row:hover { background: rgba(255,255,255,.11); transform: translateX(2px); }
+.drive-row.on { border-color: transparent;
+  background: linear-gradient(100deg, rgba(245,158,11,.22), rgba(236,72,153,.18)); }
+.drive-mark { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center;
+  font: 800 13px/1 inherit; color: #14100a; flex: 0 0 auto; }
+.drive-meta { flex: 1 1 auto; min-width: 0; }
+.drive-meta b { display: block; font-size: 13.5px; font-weight: 600; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.drive-meta span { font-size: 11.5px; color: var(--text-faint); }
+.drive-kill { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 8px; border: 0; cursor: pointer;
+  background: transparent; color: var(--text-faint); display: grid; place-items: center; }
+.drive-kill:hover { background: rgba(244,82,95,.2); color: #ffb4bb; }
+.drive-kill svg { width: 13px; height: 13px; }
+
+/* ========================================================== görüntüleyici */
+
+.viewer { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column;
+  background: rgba(4,3,6,.9); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  animation: fadeIn .2s ease both; }
+.viewer[hidden] { display: none; }
+
+.viewer-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+  padding: calc(12px + var(--safe-t)) 14px 12px; }
+.viewer-title { flex: 1 1 auto; min-width: 0; }
+.viewer-title b { display: block; font-size: 14px; font-weight: 600; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.viewer-title span { font-size: 11.5px; color: var(--text-faint); }
+
+/* İndir / Paylaş / Sil / Kapat: hepsi gerçek buton görünümünde, temayla aynı dilde. */
+.vbtn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px;
+  border-radius: 12px; cursor: pointer; text-decoration: none; white-space: nowrap;
+  border: 1px solid var(--line); background: var(--raised); color: var(--text);
+  font: 600 13px/1 inherit; transition: background .18s, transform .16s var(--spring), box-shadow .18s; }
+.vbtn svg { width: 15px; height: 15px; }
+.vbtn:hover { background: rgba(255,255,255,.14); transform: translateY(-1px); }
+.vbtn:active { transform: scale(.96); }
+.vbtn.primary { background: var(--grad); color: #1a1206; border-color: transparent;
+  box-shadow: 0 10px 24px -12px var(--pink); }
+.vbtn.danger { background: rgba(244,82,95,.16); border-color: rgba(244,82,95,.34); color: #ffb4bb; }
+.vbtn.danger:hover { background: rgba(244,82,95,.3); color: #fff; }
+@media (max-width: 620px) { .vbtn .vlabel { display: none; } .vbtn { padding: 0 11px; } }
+
+.viewer-stage { flex: 1 1 auto; min-height: 0; position: relative; display: grid; place-items: center;
+  padding: 0 14px calc(14px + var(--safe-b)); overflow: hidden; }
+.viewer-stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--r-md);
+  transition: transform .18s ease-out; cursor: zoom-in; touch-action: none; }
+.viewer-stage img.zoomed { cursor: grab; transition: none; }
+.viewer-stage img.zoomed:active { cursor: grabbing; }
+
+.viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;
+  width: 44px; height: 74px; border-radius: 16px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--line); background: rgba(20,18,26,.6); color: var(--text-dim);
+  backdrop-filter: blur(12px); transition: background .18s, color .18s; }
+.viewer-nav:hover { background: rgba(30,27,38,.85); color: #fff; }
+.viewer-nav svg { width: 21px; height: 21px; }
+.viewer-nav.prev { left: 10px; }
+.viewer-nav.next { right: 10px; }
+.viewer-nav[disabled] { opacity: .25; pointer-events: none; }
+
+/* --------------------------------------------------------------- oynatıcı */
+
+.player { position: relative; max-width: 100%; max-height: 100%; display: flex; }
+.player video { max-width: 100%; max-height: 100%; border-radius: var(--r-md); background: #000;
+  display: block; }
+
+.pl-controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  padding: 40px 14px 12px; border-radius: 0 0 var(--r-md) var(--r-md);
+  background: linear-gradient(0deg, rgba(4,3,6,.92), rgba(4,3,6,.55) 55%, transparent);
+  opacity: 1; transition: opacity .25s ease; }
+.player.idle .pl-controls { opacity: 0; pointer-events: none; }
+
+.pl-seek { position: relative; height: 18px; display: flex; align-items: center; cursor: pointer; }
+.pl-track { position: relative; width: 100%; height: 4px; border-radius: 99px;
+  background: rgba(255,255,255,.2); overflow: hidden; transition: height .16s var(--spring); }
+.pl-seek:hover .pl-track { height: 7px; }
+.pl-buffer { position: absolute; inset: 0 auto 0 0; background: rgba(255,255,255,.24); width: 0; }
+.pl-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--grad); }
+.pl-knob { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 99px; background: #fff;
+  transform: translate(-50%, -50%) scale(0); transition: transform .16s var(--spring);
+  box-shadow: 0 2px 8px rgba(0,0,0,.6); pointer-events: none; }
+.pl-seek:hover .pl-knob { transform: translate(-50%, -50%) scale(1); }
+
+.pl-row { display: flex; align-items: center; gap: 9px; margin-top: 7px; }
+.pl-btn { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
+  cursor: pointer; border: 1px solid transparent; background: transparent; color: #fff;
+  transition: background .16s, transform .16s var(--spring); }
+.pl-btn:hover { background: rgba(255,255,255,.16); }
+.pl-btn:active { transform: scale(.9); }
+.pl-btn svg { width: 17px; height: 17px; fill: currentColor; }
+.pl-btn.big { width: 42px; height: 42px; background: rgba(255,255,255,.12); }
+.pl-btn.big svg { width: 19px; height: 19px; }
+.pl-time { font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #e8e3f0;
+  white-space: nowrap; letter-spacing: .01em; }
+.pl-rate { height: 30px; padding: 0 10px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line); background: rgba(255,255,255,.08); color: #fff;
+  font: 700 11.5px/1 inherit; }
+.pl-vol { width: 78px; accent-color: var(--pink); }
+@media (max-width: 560px) { .pl-vol { display: none; } }
+
+/* ================================================ diyalog / toast / yükleme */
+
+.dialog-host { position: fixed; inset: 0; z-index: 50; display: none; place-items: center;
+  padding: 20px; background: rgba(4,3,6,.66); backdrop-filter: blur(6px); }
+.dialog-host.on { display: grid; animation: fadeIn .18s ease both; }
+
+.dialog { width: min(460px, 100%); max-height: 86vh; overflow-y: auto; border-radius: var(--r-xl);
+  background: rgba(20,18,25,.96); border: 1px solid var(--line-strong); padding: 24px;
+  box-shadow: 0 40px 90px -40px #000; animation: dlgIn .26s var(--spring) both; }
+@keyframes dlgIn { from { opacity: 0; transform: translateY(14px) scale(.97); } }
+.dialog h3 { margin: 0 0 6px; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+.dialog > p { margin: 0 0 18px; font-size: 13.5px; color: var(--text-dim); line-height: 1.5; }
+.dialog .row { display: flex; gap: 9px; justify-content: flex-end; margin-top: 20px; flex-wrap: wrap; }
+.dialog label.f { display: block; margin-bottom: 14px; }
+.dialog label.f > span { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-faint); margin-bottom: 6px; }
+.dialog input[type=text], .dialog input[type=number], .dialog input[type=url], .dialog select {
+  width: 100%; height: 40px; padding: 0 13px; border-radius: 12px; border: 1px solid var(--line);
+  background: rgba(255,255,255,.06); color: var(--text); font: inherit; outline: none; }
+.dialog input:focus, .dialog select:focus { border-color: var(--line-strong);
+  background: rgba(255,255,255,.1); }
+.dialog .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.dialog .swatch { width: 34px; height: 34px; border-radius: 11px; cursor: pointer;
+  border: 2px solid transparent; transition: transform .16s var(--spring); }
+.dialog .swatch:hover { transform: scale(1.1); }
+.dialog .swatch.on { border-color: #fff; }
+.dialog .picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px;
+  max-height: 240px; overflow-y: auto; padding: 2px; }
+.dialog .picker button { aspect-ratio: 1; border-radius: 10px; overflow: hidden; cursor: pointer;
+  border: 2px solid transparent; background: #111015; padding: 0; }
+.dialog .picker img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dialog .picker button.on { border-color: var(--amber); }
+.dialog .tree { max-height: 260px; overflow-y: auto; margin: 0 0 6px; }
+.dialog .tree button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 12px;
+  border-radius: 11px; border: 1px solid var(--line); background: var(--raised); color: var(--text);
+  cursor: pointer; font: inherit; text-align: left; margin-bottom: 6px; }
+.dialog .tree button:hover { background: rgba(255,255,255,.12); }
+.dialog .tree button.child { margin-left: 18px; }
+.dialog .link-out { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.dialog .link-out input { flex: 1 1 auto; font: 500 12px/1 ui-monospace, Menlo, monospace; }
+
+.toast-host { position: fixed; left: 50%; transform: translateX(-50%); z-index: 60;
+  bottom: calc(78px + var(--safe-b)); display: flex; flex-direction: column; gap: 8px;
+  align-items: center; pointer-events: none; width: min(440px, calc(100vw - 24px)); }
+.toast { display: flex; align-items: center; gap: 9px; padding: 11px 16px; border-radius: 14px;
+  background: rgba(24,21,30,.95); border: 1px solid var(--line-strong); color: var(--text);
+  font-size: 13px; font-weight: 500; box-shadow: 0 18px 40px -20px #000;
+  backdrop-filter: blur(18px); animation: toastIn .28s var(--spring) both; max-width: 100%; }
+.toast.out { animation: toastOut .22s ease forwards; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(.96); } }
+@keyframes toastOut { to { opacity: 0; transform: translateY(8px); } }
+.toast .tdot { width: 8px; height: 8px; border-radius: 99px; flex: 0 0 auto; background: var(--sky); }
+.toast.ok .tdot { background: var(--mint); }
+.toast.err .tdot { background: var(--danger); }
+.toast span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.drop { border: 2px dashed var(--line-strong); border-radius: var(--r-lg); padding: 30px 18px;
+  text-align: center; color: var(--text-dim); cursor: pointer; margin-bottom: 16px;
+  transition: border-color .2s, background .2s, transform .2s var(--spring); }
+.drop:hover { border-color: var(--amber); background: rgba(245,158,11,.07); }
+.drop.armed { border-color: var(--pink); background: rgba(236,72,153,.12); transform: scale(1.01); }
+.drop b { display: block; font-size: 14.5px; color: var(--text); margin-bottom: 4px; }
+.drop small { font-size: 12px; color: var(--text-faint); }
+
+.up-list { max-height: 260px; overflow-y: auto; margin-bottom: 6px; }
+.up-item { position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border-radius: 11px; background: var(--raised); border: 1px solid var(--line);
+  margin-bottom: 7px; }
+.up-item .nm { flex: 1 1 auto; min-width: 0; font-size: 12.5px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.up-item .pc { font: 700 11.5px/1 ui-monospace, Menlo, monospace; color: var(--text-dim); }
+.up-item.done .pc { color: var(--mint); }
+.up-item.fail .pc { color: var(--danger); }
+.up-bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--grad); width: 0;
+  transition: width .2s ease; }
+
+/* ======================================================= iOS uygulama içi */
+
+/* WebView'da hover diye bir şey yok; dokunmatikte "hover" ilk dokunuşta takılı
+   kalır. Cam yüzeyleri de biraz daha yoğunlaştırıyoruz. */
+/* iOS'ta kenar butonları kalır — telefonda listeler ile medya arasında geçmenin
+ * tek yolu kapıya dönmek olmasın. Yalnız daha dar ve baş parmağa göre biraz
+ * aşağıda dururlar; etiket yerine ok yeter. */
+html.ios .edge { width: 30px; height: 76px; top: 58%; }
+html.ios .edge .edge-label { display: none; }
+html.ios .stage { padding-left: 36px; padding-right: 36px; }
+html.ios .add-btn { gap: 7px; padding: 0 13px 0 11px; }
+html.ios .add-btn .add-label { max-width: 130px; opacity: 1; }
+html.ios .topbar,
+html.ios .stats-dock,
+html.ios .select-bar,
+html.ios .drawer { backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%); }
+html.ios .list-card, html.ios .media-card { transition: opacity .28s ease, scale .28s var(--spring); }
+html.ios .media-card:hover, html.ios .list-card:hover { transform: none; box-shadow: none; }
+html.ios .media-card:hover img, html.ios .media-card:hover video { transform: none; }
+html.ios .list-edit { opacity: 1; }
+html.ios .aura { animation: none; }
+html.ios input, html.ios select { font-size: 16px; } /* iOS otomatik yakınlaştırmasını keser */
+
+@media (hover: none) {
+  .media-card:hover { transform: none; box-shadow: none; }
+  .media-card:hover img, .media-card:hover video { transform: none; }
+  .media-size { opacity: .85; }
+  .list-edit { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }

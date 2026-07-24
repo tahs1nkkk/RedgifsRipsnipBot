@@ -198,6 +198,31 @@ final class BrowserController: NSObject, ObservableObject {
         pickerCommand(pickerActive ? "cancel" : "start")
     }
 
+    /// KÖK-LİSTE: the real permalink and a clean title for the media the user is
+    /// looking at, so a list saves the post/media link — not the bare
+    /// address-bar URL, which on an infinite feed is just the site domain. The
+    /// page's __rgFocusedLink() knows the centre media's own permalink; when it
+    /// offers nothing (or there is no page yet) the address bar is the fallback.
+    func focusedLink() async -> (url: String, title: String) {
+        let fallback = (addressText, pageTitle)
+        guard let webView else { return fallback }
+        let js = "window.__rgFocusedLink ? window.__rgFocusedLink() : null;"
+        return await withCheckedContinuation { continuation in
+            webView.evaluateJavaScript(js, in: nil, in: .defaultClient) { result in
+                guard case .success(let value) = result, let dict = value as? [String: Any] else {
+                    continuation.resume(returning: fallback)
+                    return
+                }
+                let url = (dict["url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let title = (dict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                continuation.resume(returning: (
+                    url.isEmpty ? fallback.0 : url,
+                    title.isEmpty ? fallback.1 : title
+                ))
+            }
+        }
+    }
+
     private func pickerCommand(_ op: String) {
         guard let webView else { return }
         let js = "window.__rgFabPicker ? window.__rgFabPicker('\(op)') : 'none';"

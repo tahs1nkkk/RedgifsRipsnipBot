@@ -1115,6 +1115,76 @@
     }, { capture: true, passive: true });
   }
 
+  // ── APP FLOATING-BUTTON BRIDGE ─────────────────────────────────────────────
+  // The in-app browser's floating button collects media from here rather than
+  // scanning the DOM generically. This is where Reddit's own rules — real post
+  // media only (host + size + avatar filtered), the currently-visible slide of
+  // a carousel, one frame per post — are enforced, so the picker stops framing
+  // avatars, off-screen carousel siblings, and non-media tiles (Reddit reports
+  // #3/#4/#5/#8). Each item resolves through collectImageUrls so the download
+  // gets the original (with the NSFW preview fallbacks), and carries the post
+  // permalink + title for the list (KÖK-LİSTE).
+
+  function postContainer(el) {
+    return deepClosest(el, "shreddit-post, [data-testid='post-container'], article") || imageRoot(el);
+  }
+
+  function postPermalink(el) {
+    const post = postContainer(el);
+    const attr = post?.getAttribute?.("permalink") || post?.getAttribute?.("content-href");
+    if (attr) return normalizeUrl(attr) || location.href;
+    const link = post?.querySelector?.("a[href*='/comments/']");
+    if (link) return normalizeUrl(link.getAttribute("href")) || location.href;
+    return location.href;
+  }
+
+  function postTitle(el) {
+    const post = postContainer(el);
+    const attr = post?.getAttribute?.("post-title");
+    if (attr) return attr.trim();
+    const node = post?.querySelector?.("[slot='title'], h1, h3");
+    return node?.textContent?.trim() || "";
+  }
+
+  // How much of the element is actually on screen — a carousel's off-screen
+  // slides translate outside the viewport and score ~0, so they never frame.
+  function onScreenArea(rect) {
+    const w = Math.max(0, Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0));
+    const h = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
+    return w * h;
+  }
+
+  window.__rgSiteName = "reddit.com";
+  window.__rgCollectMedia = () => {
+    if (!settings.redditImages) return [];
+    // One media per post: the largest currently-visible candidate image wins,
+    // which in an open gallery is exactly the slide the user is looking at.
+    const byPost = new Map();
+    for (const img of queryAllImages().filter(isCandidateImage)) {
+      const area = onScreenArea(img.getBoundingClientRect());
+      if (area < 10000) continue;
+      const post = postContainer(img);
+      const prev = byPost.get(post);
+      if (!prev || area > prev.area) byPost.set(post, { img, area });
+    }
+    const out = [];
+    for (const { img } of byPost.values()) {
+      const urls = collectImageUrls(imageRoot(img), img);
+      out.push({
+        el: img,
+        kind: "image",
+        src: bestImageUrl(urls) || img.currentSrc || img.src || "",
+        permalink: postPermalink(img),
+        title: postTitle(img),
+        resolve: () => {
+          const fresh = collectImageUrls(imageRoot(img), img);
+          if (fresh.length) sendDirectDownload(fresh, {}).catch(() => {});
+        }
+      });
+    }
+    return out;
+  };
+
   // ── INIT ─────────────────────────────────────────────────────────────────
 
   loadSettings();

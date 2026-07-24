@@ -20,9 +20,41 @@ final class Downloader: NSObject, ObservableObject {
     @Published var phase: Phase = .idle
     private var dismissTask: Task<Void, Never>?
 
+    /// The transfer currently on the wire, so a long-press on the HUD (or the
+    /// stall watchdog) can abort it. Downloads run one at a time, so one slot is
+    /// enough.
+    private var activeFetcher: StreamFetcher?
+    /// Set when the user cancels: the queue loops check it and stop instead of
+    /// falling through to the next candidate or the next queued batch. Cleared
+    /// once the queue drains.
+    private var cancelRequested = false
+    /// Last time the active transfer moved bytes — the stall watchdog reads it.
+    private var lastProgressAt = Date()
+
     func flash(_ message: String) {
         phase = .failed(message)
         scheduleDismiss(after: 2.2)
+    }
+
+    /// True while something is actually transferring or saving — the HUD only
+    /// offers "hold to cancel" then.
+    var isActive: Bool {
+        switch phase {
+        case .fetching, .saving, .uploading: return true
+        default: return false
+        }
+    }
+
+    /// KÖK-İNDİRME-İPTAL: long-pressing the download HUD lands here. Kills the
+    /// in-flight transfer and tells the queue loops to stop, so a hung download
+    /// (Coomer/Reddit sometimes never deliver bytes) does not trap the user
+    /// behind a long wait.
+    func cancelCurrent() {
+        guard isActive else { return }
+        cancelRequested = true
+        activeFetcher?.cancel()
+        phase = .failed("İndirme iptal edildi")
+        scheduleDismiss(after: 1.6)
     }
 
     private func scheduleDismiss(after seconds: Double) {
@@ -50,7 +82,13 @@ final class Downloader: NSObject, ObservableObject {
         busy = true
         defer {
             busy = false
-            if !waiters.isEmpty { waiters.removeFirst().resume() }
+            if !waiters.isEmpty {
+                waiters.removeFirst().resume()
+            } else {
+                // Queue drained: clear the cancel flag so an unrelated download
+                // started later is not refused.
+                cancelRequested = false
+            }
         }
         return await operation()
     }
@@ -78,6 +116,10 @@ final class Downloader: NSObject, ObservableObject {
         userAgent: String,
         records: DownloadRecordStore
     ) async -> [String: Any] {
+        if cancelRequested {
+            return ["ok": false, "error": "IOS04: indirme iptal edildi"]
+        }
+
         let rawUrls = (message["urls"] as? [Any] ?? []).compactMap { $0 as? String }
         var seen = Set<String>()
         let urls = rawUrls.filter { $0.lowercased().hasPrefix("http") && seen.insert($0).inserted }
@@ -99,6 +141,7 @@ final class Downloader: NSObject, ObservableObject {
         if downloadAll {
             var saved = 0
             for url in urls {
+                if cancelRequested { break }
                 do {
                     try await fetchAndSave(
                         url, namingUrl: url, site: site, sourceUrl: sourceUrl, wantImage: wantImage,
@@ -107,6 +150,7 @@ final class Downloader: NSObject, ObservableObject {
                     )
                     saved += 1
                 } catch {
+                    if cancelRequested { break }
                     errors.append("\(url): \(error.localizedDescription)")
                 }
             }
@@ -115,6 +159,9 @@ final class Downloader: NSObject, ObservableObject {
                 scheduleDismiss(after: 2.0)
                 return ["ok": true, "mode": "queued", "count": saved]
             }
+            if cancelRequested {
+                return ["ok": false, "error": "IOS04: indirme iptal edildi"]
+            }
             return failAll(urls: urls, errors: errors)
         }
 
@@ -122,6 +169,7 @@ final class Downloader: NSObject, ObservableObject {
         // first one that delivers bytes of the right kind. A short idle
         // timeout applies only while a fallback is still queued behind.
         for (index, url) in urls.enumerated() {
+            if cancelRequested { break }
             let hasFallback = index < urls.count - 1
             let idleTimeout = hasFallback && fallbackOnNoTransfer ? max(0.5, transferTimeoutMs / 1000) : 120
             do {
@@ -132,8 +180,14 @@ final class Downloader: NSObject, ObservableObject {
                 )
                 return ["ok": true, "mode": wantImage ? "image" : "media", "url": url]
             } catch {
+                // A user cancel must not fall through to the next candidate —
+                // that would look like the cancel did nothing.
+                if cancelRequested { break }
                 errors.append("\(url): \(error.localizedDescription)")
             }
+        }
+        if cancelRequested {
+            return ["ok": false, "error": "IOS04: indirme iptal edildi"]
         }
         return failAll(urls: urls, errors: errors)
     }
@@ -176,19 +230,57 @@ final class Downloader: NSObject, ObservableObject {
         }
 
         let fetcher = StreamFetcher()
+        activeFetcher = fetcher
+        lastProgressAt = Date()
+
+        // Some hosts (Coomer especially) accept the connection and then never
+        // send a byte. URLSession's own timeout does not always fire on a
+        // half-open socket, so watch the progress clock ourselves and abort
+        // after a minute of silence instead of hanging the queue forever.
+        let watchdog = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                if Date().timeIntervalSince(self.lastProgressAt) > 60 {
+                    fetcher.cancel()
+                    return
+                }
+            }
+        }
+        defer {
+            watchdog.cancel()
+            if activeFetcher === fetcher { activeFetcher = nil }
+        }
+
         let result = try await fetcher.fetch(request: request) { [weak self] received, total in
             Task { @MainActor in
-                guard let self, case .fetching(let name, _, _, let started) = self.phase else { return }
+                guard let self else { return }
+                self.lastProgressAt = Date()
+                guard case .fetching(let name, _, _, let started) = self.phase else { return }
                 self.phase = .fetching(name: name, received: received, total: total, startedAt: started)
             }
         }
         defer { try? FileManager.default.removeItem(at: result.fileURL) }
 
-        let finalName = MediaNaming.applyMime(result.mimeType, to: filename)
-        if wantImage && !MediaNaming.isImage(mime: result.mimeType, filename: finalName) {
+        // Scrolller & friends serve WebP; the user wants plain JPG on disk.
+        // Convert before naming so applyMime lands a .jpg name and Photos gets JPEG.
+        var sourceFileURL = result.fileURL
+        var mimeType = result.mimeType
+        if MediaNaming.isImage(mime: result.mimeType, filename: filename),
+           ImageConverter.isWebP(mime: result.mimeType, fileURL: result.fileURL),
+           let jpg = ImageConverter.webpToJPEG(result.fileURL) {
+            sourceFileURL = jpg
+            mimeType = "image/jpeg"
+        }
+        defer {
+            if sourceFileURL != result.fileURL { try? FileManager.default.removeItem(at: sourceFileURL) }
+        }
+
+        let finalName = MediaNaming.applyMime(mimeType, to: filename)
+        if wantImage && !MediaNaming.isImage(mime: mimeType, filename: finalName) {
             throw DownloadError.notAnImage
         }
-        let isVideo = MediaNaming.isVideo(mime: result.mimeType, filename: finalName)
+        let isVideo = MediaNaming.isVideo(mime: mimeType, filename: finalName)
         let isWebm = finalName.lowercased().hasSuffix(".webm")
         let destination = AppSettings.shared.effectiveDestination
 
@@ -201,9 +293,9 @@ final class Downloader: NSObject, ObservableObject {
 
         // Photos keeps the resource's file name; rename the temp file so the
         // asset is not called "download-3F2A.tmp".
-        let named = result.fileURL.deletingLastPathComponent().appendingPathComponent(finalName)
+        let named = sourceFileURL.deletingLastPathComponent().appendingPathComponent(finalName)
         try? FileManager.default.removeItem(at: named)
-        try FileManager.default.moveItem(at: result.fileURL, to: named)
+        try FileManager.default.moveItem(at: sourceFileURL, to: named)
         defer { try? FileManager.default.removeItem(at: named) }
 
         var wrote: [String] = []
@@ -212,7 +304,9 @@ final class Downloader: NSObject, ObservableObject {
         if destination != .photos, let cloud = CloudClient.fromSettings() {
             phase = .uploading(name: finalName)
             do {
-                try await cloud.upload(fileURL: named, preferredName: finalName)
+                // Site etiketi buradan gider: arşivde dosya doğru sekmenin altına
+                // düşsün diye. Kaynağı bilinmiyorsa sunucu "Other" kullanır.
+                try await cloud.upload(fileURL: named, preferredName: finalName, site: site)
                 wrote.append("Bulut")
             } catch {
                 problems.append("bulut: \(error.localizedDescription)")
@@ -277,6 +371,7 @@ final class StreamFetcher: NSObject, URLSessionDataDelegate {
     private var lastReport = Date.distantPast
     private var onProgress: ((Int64, Int64) -> Void)?
     private var session: URLSession?
+    private var task: URLSessionDataTask?
 
     func fetch(request: URLRequest, onProgress: @escaping (Int64, Int64) -> Void) async throws -> Result {
         self.onProgress = onProgress
@@ -287,8 +382,16 @@ final class StreamFetcher: NSObject, URLSessionDataDelegate {
         defer { session.finishTasksAndInvalidate() }
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
-            session.dataTask(with: request).resume()
+            let task = session.dataTask(with: request)
+            self.task = task
+            task.resume()
         }
+    }
+
+    /// Aborts the transfer. The delegate's didCompleteWithError then resumes the
+    /// continuation with NSURLErrorCancelled, so the caller unwinds normally.
+    func cancel() {
+        task?.cancel()
     }
 
     private func finish(_ outcome: Swift.Result<Result, Error>) {

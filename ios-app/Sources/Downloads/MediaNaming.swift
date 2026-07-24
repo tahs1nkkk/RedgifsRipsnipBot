@@ -25,6 +25,32 @@ enum MediaNaming {
         return String(text.prefix(80))
     }
 
+    /// Strips a trailing variant/resolution tag from a file stem so downloads are
+    /// named `<slug>` not `<slug>-large` (RedGifs) or `<slug>_1920x1080` (Scrolller).
+    /// Only trailing tokens go, and never the whole name.
+    static func stripVariantSuffix(_ stem: String) -> String {
+        let patterns = [
+            "[-_](?:small|mobile|mini|thumbnail|thumb|preview|poster|sd|hd|medium|large)$",
+            "[-_][0-9]{2,5}x[0-9]{2,5}$",   // 1920x1080
+            "[-_][0-9]{3,4}p$"              // 1080p, 720p
+        ]
+        var text = stem
+        var keepGoing = true
+        while keepGoing {
+            keepGoing = false
+            for pattern in patterns {
+                let stripped = text.replacingOccurrences(
+                    of: pattern, with: "", options: [.regularExpression, .caseInsensitive]
+                )
+                if stripped != text && !stripped.isEmpty {
+                    text = stripped
+                    keepGoing = true
+                }
+            }
+        }
+        return text
+    }
+
     static func fileExtension(of urlString: String) -> String {
         guard let url = URL(string: urlString) else { return "mp4" }
         let ext = url.pathExtension.lowercased()
@@ -47,6 +73,8 @@ enum MediaNaming {
         for known in videoExtensions.union(imageExtensions) where label.lowercased().hasSuffix(".\(known)") {
             label = String(label.dropLast(known.count + 1))
         }
+        label = stripVariantSuffix(label)
+        if label.isEmpty { label = "media" }
         return "\(label).\(ext)"
     }
 

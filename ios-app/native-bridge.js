@@ -37,6 +37,11 @@
   /* ---------------------------------------------------------------- chrome.* */
 
   const runtime = {
+    // Handlers guard their download path with `chrome.runtime.id` and throw
+    // "Eklenti güncellendi" (extension reloaded) when it is missing. In the app
+    // the bridge is always live, so give it a stable id or every handler-routed
+    // download fails with that error (Instagram especially).
+    id: "tasu-native-bridge",
     lastError: undefined,
     getURL: (path) => String(path || ""),
     getManifest: () => ({ version: VERSION }),
@@ -244,7 +249,53 @@
     return found.filter((m) => m.button || /^https?:/i.test(m.src));
   }
 
+  // A looser on-screen test for site-vouched media: the content script already
+  // guarantees these are real, downloadable, and scoped (ads/viewer filtered),
+  // so we do not re-impose the 120px floor that drops small thumbnails
+  // (genel.md KÖK-FAB-KAPSAM / small-image report).
+  function onScreenLoose(rect) {
+    return rect.width >= 24 && rect.height >= 24
+      && rect.bottom > 0 && rect.top < innerHeight
+      && rect.right > 0 && rect.left < innerWidth;
+  }
+
+  // KÖK-FAB-KAPSAM: prefer the site's own media list. Each content script may
+  // expose window.__rgCollectMedia() returning descriptors it alone can build
+  // correctly — ads filtered, viewer/fullscreen scoped, video vs. poster known,
+  // and each item's permalink/title for lists. The generic DOM scan is the
+  // fallback for sites that do not implement it.
+  function collectMedia() {
+    if (typeof window.__rgCollectMedia === "function") {
+      let list = [];
+      try { list = window.__rgCollectMedia() || []; } catch { list = []; }
+      const buttons = handlerButtons();
+      const mapped = [];
+      for (const m of list) {
+        const el = m && m.el;
+        if (!el || !el.isConnected) continue;
+        const rect = el.getBoundingClientRect();
+        if (!onScreenLoose(rect)) continue;
+        mapped.push({
+          el,
+          rect,
+          src: m.src || "",
+          image: m.kind ? m.kind === "image" : !!m.image,
+          poster: !!m.poster,
+          permalink: m.permalink || "",
+          title: m.title || "",
+          resolve: typeof m.resolve === "function" ? m.resolve : null,
+          button: m.button || buttonFor(rect, buttons)
+        });
+      }
+      return mapped.filter((m) => m.resolve || m.button || /^https?:/i.test(m.src));
+    }
+    return candidates();
+  }
+
   function grab(media) {
+    if (media.resolve) {
+      try { media.resolve(); return "clicked"; } catch { /* fall through */ }
+    }
     if (media.button) {
       clickTarget(media.button);
       return "clicked";
@@ -257,6 +308,25 @@
     });
     return media.image ? "image" : "video";
   }
+
+  // The clean site name for lists, provided by the content script when it can
+  // (falls back to the host). Used with the focused media's permalink.
+  function cleanSiteName() {
+    if (typeof window.__rgSiteName === "string" && window.__rgSiteName) return window.__rgSiteName;
+    try { return location.hostname.replace(/^www\./, ""); } catch { return ""; }
+  }
+
+  // KÖK-LİSTE: the "+" button asks the page for the focused media's real
+  // permalink and a clean title instead of saving the bare address-bar URL.
+  window.__rgFocusedLink = () => {
+    const media = centreMost(collectMedia());
+    const permalink = (media && media.permalink) || "";
+    const title = (media && media.title) || "";
+    return {
+      url: permalink || location.href,
+      title: title || cleanSiteName() || document.title || ""
+    };
+  };
 
   // Feeds scroll vertically, so "the one I am looking at" is the one nearest the
   // middle of the screen height; horizontal distance only breaks ties in grids.
@@ -279,10 +349,16 @@
 
   /* ------------------------------------------------------------- select mode */
 
-  // Long-pressing the floating button enters a select mode: the page dims and
-  // every candidate gets a frame; tapping a frame toggles it (glowing white
-  // when selected). Nothing auto-dismisses — the mode ends when the floating
-  // button is pressed again (download the selection) or long-pressed (cancel).
+  // Long-pressing the floating button enters a select mode: an overlay covers
+  // the page and every on-screen media gets a frame; tapping a frame toggles it
+  // (glowing yellow neon when selected). Nothing auto-dismisses — the mode ends
+  // when the floating button is pressed again (download the selection) or
+  // long-pressed (cancel), or via the İptal control on the bar.
+  //
+  // KÖK-SEÇİM-OVERLAY: the overlay itself takes pointer events (pointer-events
+  // :auto), so taps on the page's own links and site buttons are swallowed
+  // instead of navigating — but touch-action:pan-y lets a drag still scroll the
+  // page. Frames and the control bar sit above the overlay and stay tappable.
   //
   // Selection survives scrolling: an entry whose element leaves the viewport
   // keeps its state with the frame hidden, and reappears on the way back. If a
@@ -307,19 +383,18 @@
     frame.style.top = media.rect.top + "px";
     frame.style.width = media.rect.width + "px";
     frame.style.height = media.rect.height + "px";
-    frame.style.border = selected ? "2.5px solid #fff" : "1.5px solid rgba(255,255,255,.45)";
-    frame.style.background = selected ? "rgba(255,255,255,.07)" : "transparent";
+    // Reddit#2: a selected frame glows yellow neon ("sarı neon").
+    frame.style.border = selected ? "2.5px solid #ffe600" : "1.5px solid rgba(255,255,255,.5)";
+    frame.style.background = selected ? "rgba(255,230,0,.10)" : "transparent";
     frame.style.boxShadow = selected
-      ? "0 0 14px 3px rgba(255,255,255,.95), 0 0 36px 9px rgba(255,255,255,.45), inset 0 0 20px rgba(255,255,255,.25)"
+      ? "0 0 14px 3px rgba(255,230,0,.95), 0 0 40px 10px rgba(255,230,0,.5), inset 0 0 22px rgba(255,230,0,.28)"
       : "none";
   }
 
   function updateHint() {
     if (!picker) return;
     const count = selectedCount();
-    picker.hintText.textContent = count
-      ? `${count} seçildi — indirme butonu başlatır`
-      : "Medyaya dokunarak seç";
+    picker.countText.textContent = count ? `${count} seçildi` : "Medyayı seç";
     postPickerState(true, count);
   }
 
@@ -332,7 +407,7 @@
   function pickerSync() {
     if (!picker) return;
     const seen = new Set();
-    for (const media of candidates()) {
+    for (const media of collectMedia()) {
       seen.add(media.el);
       let entry = picker.entries.get(media.el);
       if (!entry) {
@@ -350,7 +425,7 @@
           event.preventDefault();
           toggleEntry(created);
         });
-        picker.layer.appendChild(frame);
+        picker.frames.appendChild(frame);
         picker.entries.set(media.el, created);
         entry = created;
       }
@@ -379,55 +454,98 @@
     });
   }
 
+  // Swallow every click/tap that lands on the overlay backdrop (not a frame or a
+  // control) so page-delegated handlers on document never navigate while
+  // selecting. Frames and buttons stopPropagation in their own handlers, so
+  // they never reach here.
+  function pickerBlock(event) {
+    if (!picker) return;
+    if (event.target === picker.layer || event.target === picker.dim || event.target === picker.frames) {
+      event.stopPropagation();
+      event.preventDefault();
+    }
+  }
+
+  function setDark(on) {
+    if (!picker) return;
+    picker.dark = on;
+    picker.dim.style.background = on ? "rgba(0,0,0,.55)" : "transparent";
+    picker.darkButton.textContent = on ? "Karanlık: Açık" : "Karanlık: Kapalı";
+    picker.darkButton.style.background = on ? "rgba(255,230,0,.22)" : "rgba(255,255,255,.16)";
+  }
+
   function pickerCancel() {
     if (!picker) return "cancelled";
     clearInterval(picker.timer);
     if (picker.raf) cancelAnimationFrame(picker.raf);
     removeEventListener("scroll", pickerOnMove, true);
     removeEventListener("resize", pickerOnMove, true);
+    picker.layer.removeEventListener("click", pickerBlock, true);
     picker.layer.remove();
     picker = null;
     postPickerState(false, 0);
     return "cancelled";
   }
 
+  function controlButton(label) {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.style.cssText = [
+      "border:0", "border-radius:999px", "padding:7px 14px", "cursor:pointer",
+      "background:rgba(255,255,255,.16)", "color:#fff", "white-space:nowrap",
+      "font:600 13px/1 -apple-system,system-ui,sans-serif",
+      "-webkit-tap-highlight-color:transparent"
+    ].join(";");
+    return button;
+  }
+
   function pickerStart() {
     pickerCancel();
     const layer = document.createElement("div");
     layer.id = PICKER_LAYER_ID;
-    layer.style.cssText = "position:fixed;inset:0;z-index:2147483600;pointer-events:none";
+    // pointer-events:auto here is the whole point — the overlay eats page taps.
+    layer.style.cssText = "position:fixed;inset:0;z-index:2147483600;pointer-events:auto;touch-action:pan-y";
 
     const dim = document.createElement("div");
-    dim.style.cssText = "position:absolute;inset:0;background:rgba(0,0,0,.5)";
+    dim.style.cssText = "position:absolute;inset:0;pointer-events:none;transition:background .15s";
     layer.appendChild(dim);
 
-    const hint = document.createElement("div");
-    hint.style.cssText = [
+    // Frames live in their own container so the control bar (a later sibling)
+    // always paints above them and never gets covered by a frame.
+    const frames = document.createElement("div");
+    frames.style.cssText = "position:absolute;inset:0;pointer-events:none";
+    layer.appendChild(frames);
+
+    const bar = document.createElement("div");
+    bar.style.cssText = [
       "position:fixed", "top:calc(env(safe-area-inset-top, 0px) + 12px)",
-      "left:50%", "transform:translateX(-50%)", "max-width:88vw",
-      "display:flex", "align-items:center", "gap:10px",
-      "padding:9px 14px", "border-radius:999px", "pointer-events:auto",
-      "background:rgba(30,30,32,.55)", "border:1px solid rgba(255,255,255,.25)",
+      "left:50%", "transform:translateX(-50%)", "max-width:94vw", "z-index:5",
+      "display:flex", "align-items:center", "gap:9px",
+      "padding:8px 12px", "border-radius:999px", "pointer-events:auto",
+      "background:rgba(30,30,32,.6)", "border:1px solid rgba(255,255,255,.25)",
       "-webkit-backdrop-filter:blur(18px) saturate(180%)", "backdrop-filter:blur(18px) saturate(180%)",
       "color:#fff", "font:500 13px/1.2 -apple-system,system-ui,sans-serif",
       "box-shadow:0 6px 24px rgba(0,0,0,.4)"
     ].join(";");
-    const hintText = document.createElement("span");
-    const cancelButton = document.createElement("button");
-    cancelButton.textContent = "İptal";
-    cancelButton.style.cssText = [
-      "border:0", "border-radius:999px", "padding:5px 11px", "cursor:pointer",
-      "background:rgba(255,255,255,.18)", "color:#fff",
-      "font:600 12px/1 -apple-system,system-ui,sans-serif",
-      "-webkit-tap-highlight-color:transparent"
-    ].join(";");
-    cancelButton.addEventListener("click", pickerCancel);
-    hint.append(hintText, cancelButton);
-    layer.appendChild(hint);
+
+    const countText = document.createElement("span");
+    countText.style.cssText = "padding:0 4px;min-width:56px;text-align:center";
+
+    const cancelButton = controlButton("İptal");
+    cancelButton.addEventListener("click", (event) => { event.stopPropagation(); pickerCancel(); });
+
+    const darkButton = controlButton("Karanlık: Açık");
+    darkButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (picker) setDark(!picker.dark);
+    });
+
+    bar.append(countText, darkButton, cancelButton);
+    layer.appendChild(bar);
 
     picker = {
-      layer,
-      hintText,
+      layer, dim, frames, countText, darkButton,
+      dark: true,
       entries: new Map(),
       raf: 0,
       // Scroll and resize reposition immediately; the slow tick catches DOM
@@ -435,8 +553,10 @@
       timer: setInterval(pickerSync, 700)
     };
     (document.body || document.documentElement).appendChild(layer);
+    layer.addEventListener("click", pickerBlock, true);
     addEventListener("scroll", pickerOnMove, { capture: true, passive: true });
     addEventListener("resize", pickerOnMove, true);
+    setDark(true);
 
     pickerSync();
     if (!picker.entries.size) {
@@ -453,17 +573,24 @@
     pickerCancel();
     if (!chosen.length) return "0";
 
-    const clicks = chosen.filter((m) => m.button && m.button.isConnected);
-    const direct = chosen.filter((m) => !(m.button && m.button.isConnected) && /^https?:/i.test(m.src));
+    // A media resolves through its own resolver first, else a handler button,
+    // else its direct src. Video vs. image comes from the descriptor, not from
+    // guessing at a poster (KÖK-VIDEO-POSTER).
+    const actions = chosen.filter((m) => m.resolve || (m.button && m.button.isConnected));
+    const direct = chosen.filter((m) => !(m.resolve || (m.button && m.button.isConnected)) && /^https?:/i.test(m.src));
     const videos = direct.filter((m) => !m.image).map((m) => m.src);
     const images = direct.filter((m) => m.image).map((m) => m.src);
 
     // Fire-and-forget on purpose: the caller needs the count synchronously,
     // and the native side serializes the downloads anyway. The stagger gives
-    // each handler button time to resolve its media before the next click.
+    // each resolver/handler time to resolve its media before the next one.
     (async () => {
-      for (const media of clicks) {
-        clickTarget(media.button);
+      for (const media of actions) {
+        if (media.resolve) {
+          try { media.resolve(); } catch { /* skip this one */ }
+        } else {
+          clickTarget(media.button);
+        }
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
       if (videos.length) {
@@ -478,7 +605,7 @@
       }
     })();
 
-    return String(clicks.length + videos.length + images.length);
+    return String(actions.length + videos.length + images.length);
   }
 
   /* ------------------------------------------------------------ entry points */
@@ -486,7 +613,7 @@
   // Short tap while browsing: take the media in the middle of the screen.
   window.__rgFabDownload = () => {
     if (picker) return "picker";
-    const media = centreMost(candidates());
+    const media = centreMost(collectMedia());
     if (media) return grab(media);
 
     // Pages with a single page-level button (Instagram's "download all",
