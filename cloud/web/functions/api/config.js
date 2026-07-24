@@ -4,6 +4,6 @@
 // Yetki denetimi çağırandan önce (worker.js) yapılır.
 import { json } from "./_utils.js";
 
-export function onRequestGet() {
-  return json({ ok: true });
+export function onRequestGet({ version }) {
+  return json({ ok: true, version: version || "1.1" });
 }
