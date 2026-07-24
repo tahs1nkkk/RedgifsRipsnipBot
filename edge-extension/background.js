@@ -120,6 +120,18 @@ function filenameFor(url, settings = DEFAULT_SETTINGS, folderName = "", download
     label = "redgifs-video";
   }
   label = label.replace(/\.(mp4|webm|mov|m4v|jpg|jpeg|png|webp|gif)$/i, "");
+  // Drop a trailing variant/resolution tag so files are `<slug>` not
+  // `<slug>-large` (RedGifs) or `<slug>_1920x1080` (Scrolller). Mirrors
+  // MediaNaming.stripVariantSuffix on the iOS side.
+  let previous;
+  do {
+    previous = label;
+    label = label
+      .replace(/[-_](?:small|mobile|mini|thumbnail|thumb|preview|poster|sd|hd|medium|large)$/i, "")
+      .replace(/[-_]\d{2,5}x\d{2,5}$/i, "")
+      .replace(/[-_]\d{3,4}p$/i, "");
+  } while (label !== previous && label);
+  if (!label) label = "media";
   if (settings.includeDateInFilename) {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     label = `${label}-${stamp}`;

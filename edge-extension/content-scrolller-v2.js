@@ -840,6 +840,25 @@
     }
   });
 
+  // --- App floating-button bridge --------------------------------------------
+  // visibleMediaCandidates() already does everything the app needs: ads are
+  // filtered, only the top viewer layer counts (no framing the feed behind a
+  // fullscreen viewer), and each candidate knows whether it is a video or an
+  // image and its best-quality url or source page. Reuse it wholesale so the
+  // floating button and the picker match the on-card buttons exactly.
+  window.__rgSiteName = "scrolller.com";
+  window.__rgCollectMedia = () =>
+    visibleMediaCandidates().map((candidate) => ({
+      el: candidate.media,
+      kind: candidate.kind,
+      src: candidate.urls[0] || "",
+      permalink: candidate.sourcePageUrl || location.href,
+      title: "",
+      // Route through the site's own downloader so the scrolllerSourceUrl path
+      // (videos with no direct url) keeps working (KÖK-VIDEO-POSTER).
+      resolve: () => { downloadCandidate(candidate, {}).catch(() => {}); }
+    }));
+
   ensureInstalled();
   renderCardButtons();
   loadSettings();

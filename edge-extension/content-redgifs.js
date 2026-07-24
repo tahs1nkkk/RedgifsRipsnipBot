@@ -2237,6 +2237,169 @@
     }
   }, { passive: true });
 
+  // ── App floating-button bridge ─────────────────────────────────────────────
+  // The in-app browser drives downloads from here instead of the hidden tile
+  // buttons. RedGifs sponsored-creator tiles and off-redgifs ad images are
+  // dropped by isProbablyAdElement, and only media that carries a real slug
+  // (data-feed-item-id / a /watch/ link) is vouched for, so the app never offers
+  // a download on an ad. Each item carries its watch-page permalink so the list
+  // saves the real link, not the domain. Downloads route through the same
+  // resolvers the visible buttons use — direct CDN mp4/jpg first, Copy-Link
+  // fallback for blob/HLS feed videos.
+
+  // The app has no folder chooser, so downloads land in the main folder (niche
+  // pages still auto-sort via currentNicheFolder() inside sendDirectDownload).
+  async function bridgeWatchCardDownload(watchUrl, card) {
+    chosenFolder = "";
+    const video = card && card.querySelector ? card.querySelector("video") : null;
+    const directUrls = settings.directDownloads
+      ? collectDirectMediaCandidates(card, video, { includePerformance: false })
+      : [];
+    await sendDirectDownload(directUrls, watchUrl, {
+      allowRipsnipFallback: false,
+      preferRipsnipWhenOpen: settings.ripsnipWhenOpen,
+      expectedSlug: expectedSlugFromUrl(watchUrl)
+    });
+  }
+
+  async function bridgeImageDownload(item) {
+    chosenFolder = "";
+    const img = [...item.querySelectorAll("img")]
+      .map((i) => ({ i, r: i.getBoundingClientRect() }))
+      .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height)[0]?.i;
+    const raw = img ? avatarBestUrl(img) : "";
+    const large = redgifsLargeImage(raw);
+    const clean = raw.replace(/-(?:small|mobile|mini|thumbnail|thumb|preview|poster|sd|medium|large)(\.(?:jpg|jpeg|png|webp))/i, "$1");
+    const candidates = [...new Set([large, clean, raw].filter(Boolean))];
+    if (!candidates.length) throw new Error("No image url.");
+    await sendDirectDownload(candidates, "", { allowRipsnipFallback: false, imageMode: true });
+  }
+
+  async function bridgeViewerDownload(item) {
+    chosenFolder = "";
+    const container = closestVideoContainer(item.video);
+    const fallbackUrl = watchUrlFromFeedItem(item.video)
+      || (activeFeedItemSlug() ? `https://www.redgifs.com/watch/${activeFeedItemSlug()}` : null)
+      || normalizeRedgifsWatchUrl(location.href)
+      || deriveCurrentShareUrl();
+    let directUrls = collectDirectMediaCandidates(container, item.video, { allowViewerVideo: true, includePerformance: true });
+    directUrls = [...new Set([...directUrls, ...cdnUrlsForWatch(fallbackUrl)])];
+    try {
+      await sendDirectDownload(directUrls, fallbackUrl, {
+        allowRipsnipFallback: false,
+        preferRipsnipWhenOpen: settings.ripsnipWhenOpen,
+        expectedSlug: expectedSlugFromMedia(container, item.video, fallbackUrl)
+      });
+      return;
+    } catch { /* blob/HLS with no derivable slug → Copy Link fallback */ }
+    const url = await copyCurrentShareLink({ allowViewerVideo: true });
+    await sendDirectDownload([], url, {
+      allowRipsnipFallback: false,
+      preferRipsnipWhenOpen: settings.ripsnipWhenOpen,
+      expectedSlug: expectedSlugFromUrl(url)
+    });
+  }
+
+  async function bridgeTileDownload(root, media) {
+    chosenFolder = "";
+    const fallbackUrl = findProfileTileWatchUrl(root, media);
+    const directUrls = settings.directDownloads ? collectDirectMediaCandidates(root, media) : [];
+    if (settings.directDownloads && directUrls.length) {
+      await sendDirectDownload(directUrls, fallbackUrl, {
+        allowRipsnipFallback: false,
+        preferRipsnipWhenOpen: settings.ripsnipWhenOpen,
+        expectedSlug: expectedSlugFromMedia(root, media, fallbackUrl)
+      });
+      return;
+    }
+    const returnUrl = location.href;
+    const openResult = await openProfileTile(root, media, fallbackUrl, returnUrl);
+    if (openResult === "navigating") return;
+    const url = await copyProfileShareLinkWithFallback(fallbackUrl);
+    await sendDirectDownload([], url, {
+      allowRipsnipFallback: false,
+      preferRipsnipWhenOpen: settings.ripsnipWhenOpen,
+      expectedSlug: expectedSlugFromUrl(url)
+    });
+    await returnFromProfileTile(returnUrl);
+  }
+
+  function bridgeFeedCell(item) {
+    const slug = item.getAttribute("data-feed-item-id");
+    if (!slug || !/^[a-z0-9]{4,}$/i.test(slug)) return null;
+    const rect = item.getBoundingClientRect();
+    if (rect.width < 90 || rect.height < 90) return null;
+    if (!visibleRect(item).visible) return null;
+    if (isProbablyAdElement(item)) return null;
+
+    const watchUrl = `https://www.redgifs.com/watch/${slug.toLowerCase()}`;
+    const media = item.querySelector("video, img") || item;
+    const isImage = /\/images(?:\/|$|\?)/i.test(location.pathname) || /GifPreview_isImage/i.test(String(item.className || ""));
+    if (isImage) {
+      return { el: media, kind: "image", src: "", permalink: watchUrl, title: "",
+        resolve: () => bridgeImageDownload(item).catch(() => {}) };
+    }
+    return { el: media, kind: "video", src: "", permalink: watchUrl, title: "",
+      resolve: () => bridgeWatchCardDownload(watchUrl, item).catch(() => {}) };
+  }
+
+  window.__rgSiteName = "redgifs.com";
+  window.__rgCollectMedia = () => {
+    const out = [];
+    const seen = new Set();
+
+    // A fullscreen / watch-page viewer (one big video filling the screen) takes
+    // priority: return just it so the app doesn't also frame the grid tiles
+    // behind it, and fullscreen taps count as a single download.
+    const viewer = viewerVideoItem();
+    if (
+      viewer &&
+      viewer.rect.width > 300 &&
+      viewer.rect.height > 300 &&
+      !(isProfilePage() && isInProfileGrid(viewer.video))
+    ) {
+      const permalink = watchUrlFromFeedItem(viewer.video)
+        || (activeFeedItemSlug() ? `https://www.redgifs.com/watch/${activeFeedItemSlug()}` : null)
+        || normalizeRedgifsWatchUrl(location.href)
+        || location.href;
+      out.push({ el: viewer.video, kind: "video", src: "", permalink, title: "",
+        resolve: () => bridgeViewerDownload(viewer).catch(() => {}) });
+      return out;
+    }
+
+    // Profile grids don't use data-feed-item-id; resolve each tile through the
+    // proven tile flow (direct URL, else open + Copy Link).
+    if (isProfilePage()) {
+      const medias = [...document.querySelectorAll("img, video")]
+        .filter((media) => visibleRect(media).visible)
+        .filter((media) => {
+          const r = media.getBoundingClientRect();
+          return r.width >= 90 && r.height >= 90;
+        });
+      for (const media of medias) {
+        const root = tileRootFromMedia(media);
+        if (!root || seen.has(root)) continue;
+        seen.add(root);
+        const watchUrl = findProfileTileWatchUrl(root, media);
+        out.push({ el: media, kind: media.tagName === "VIDEO" ? "video" : "image", src: "",
+          permalink: watchUrl || location.href, title: "",
+          resolve: () => bridgeTileDownload(root, media).catch(() => {}) });
+      }
+      return out;
+    }
+
+    // Feed / explore / niches grids: every cell carries its slug in
+    // data-feed-item-id (video or image).
+    for (const item of document.querySelectorAll("[data-feed-item-id]")) {
+      if (seen.has(item)) continue;
+      const descriptor = bridgeFeedCell(item);
+      if (!descriptor) continue;
+      seen.add(item);
+      out.push(descriptor);
+    }
+    return out;
+  };
+
   loadSettings();
   installUi();
   let installPending = false;

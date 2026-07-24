@@ -870,6 +870,101 @@
     await sendDownload([url], false, folder);
   }
 
+  // ── App floating-button bridge ────────────────────────────────────────────
+  // The in-app browser has no hover, so instead of detectContext(pointer) it
+  // collects one media per visible post here. Each item resolves through the
+  // media API (matchCarouselItem → bestUrlFromNode), so a reel's video is
+  // fetched as video, not its poster (IG video↔poster), and the list gets the
+  // post permalink, not the bare domain (KÖK-LİSTE).
+
+  function postScopeFor(media) {
+    return media.closest("article")
+      || media.closest("a[href*='/p/'], a[href*='/reel/'], a[href*='/reels/'], a[href*='/tv/']")
+      || media;
+  }
+
+  function shortcodeForMedia(media) {
+    const pageSc = /\/(?:p|reel|reels|tv)\/[^/?#]/i.test(location.pathname)
+      ? shortcodeFromHref(location.href) : "";
+    if (pageSc) return pageSc;
+    const scope = media.closest("article") || media;
+    const link = scope.querySelector?.("a[href*='/p/'], a[href*='/reel/'], a[href*='/reels/'], a[href*='/tv/']")
+      || media.closest("a[href*='/p/'], a[href*='/reel/'], a[href*='/reels/'], a[href*='/tv/']");
+    return (link && shortcodeFromHref(link.href)) || shortcodeFromHref(location.href) || "";
+  }
+
+  function postPermalinkIG(media) {
+    const scope = media.closest("article") || media;
+    const link = scope.querySelector?.("a[href*='/p/'], a[href*='/reel/'], a[href*='/reels/'], a[href*='/tv/']")
+      || media.closest("a[href*='/p/'], a[href*='/reel/'], a[href*='/reels/'], a[href*='/tv/']");
+    if (link) { try { return new URL(link.getAttribute("href"), location.href).href; } catch { /* fall through */ } }
+    const sc = shortcodeForMedia(media);
+    return sc ? `https://www.instagram.com/p/${sc}/` : location.href;
+  }
+
+  async function resolveMediaIG(media) {
+    const sc = shortcodeForMedia(media);
+    if (sc) {
+      try {
+        const info = await fetchMediaInfo(shortcodeToMediaId(sc));
+        const node = matchCarouselItem(info, media);
+        const url = bestUrlFromNode(node);
+        if (url) { await sendDownload([url], false, ""); return; }
+      } catch (error) {
+        console.warn("[rg-ig] köprü API başarısız, doğrudan src'ye düşülüyor", error?.message || error);
+      }
+    }
+    const direct = media instanceof HTMLVideoElement ? directUrlFromVideo(media) : bestImgSrc(media);
+    if (direct) await sendDownload([direct], false, "");
+  }
+
+  window.__rgSiteName = "instagram.com";
+  window.__rgCollectMedia = () => {
+    if (!settings.instagramButtons) return [];
+
+    // Story / highlight viewer: a single media, resolved by the story pipeline.
+    if (/^\/stories\//i.test(location.pathname)) {
+      const media = visibleMediaIn(document.body);
+      if (!media) return [];
+      return [{
+        el: media,
+        kind: media instanceof HTMLVideoElement ? "video" : "image",
+        src: media instanceof HTMLVideoElement ? "" : bestImgSrc(media),
+        permalink: location.href,
+        title: "",
+        resolve: () => { downloadCurrentStory("").catch(() => {}); }
+      }];
+    }
+
+    // Feed / profile / post: the largest visible media of each post, avatars
+    // and icons filtered out.
+    const byPost = new Map();
+    for (const media of document.querySelectorAll("img, video")) {
+      const r = media.getBoundingClientRect();
+      const visW = Math.max(0, Math.min(r.right, window.innerWidth) - Math.max(r.left, 0));
+      const visH = Math.max(0, Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0));
+      const area = visW * visH;
+      if (area < 10000) continue;
+      if (media instanceof HTMLImageElement && isAvatarImg(media)) continue;
+      const scope = postScopeFor(media);
+      const prev = byPost.get(scope);
+      if (!prev || area > prev.area) byPost.set(scope, { media, area });
+    }
+
+    const out = [];
+    for (const { media } of byPost.values()) {
+      out.push({
+        el: media,
+        kind: media instanceof HTMLVideoElement ? "video" : "image",
+        src: media instanceof HTMLVideoElement ? (directUrlFromVideo(media) || "") : bestImgSrc(media),
+        permalink: postPermalinkIG(media),
+        title: "",
+        resolve: () => { resolveMediaIG(media).catch(() => {}); }
+      });
+    }
+    return out;
+  };
+
   // ── Events ────────────────────────────────────────────────────────────────
 
   let mmPending = false, lastX = 0, lastY = 0;

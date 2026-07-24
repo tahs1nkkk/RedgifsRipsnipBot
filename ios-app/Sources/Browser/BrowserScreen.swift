@@ -22,7 +22,16 @@ struct BrowserScreen: View {
     @EnvironmentObject private var browser: BrowserController
     @ObservedObject private var downloader = Downloader.shared
     @FocusState private var addressFocused: Bool
-    @State private var showAddToList = false
+    @State private var pendingLink: PendingLink?
+
+    /// The focused media's real permalink + title, resolved from the page just
+    /// before the sheet opens (KÖK-LİSTE). Identifiable so `.sheet(item:)` opens
+    /// only once the async lookup has filled it in.
+    struct PendingLink: Identifiable {
+        let id = UUID()
+        let url: String
+        let title: String
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -45,8 +54,8 @@ struct BrowserScreen: View {
         }
         .animation(.easeInOut(duration: 0.22), value: browser.showingHome)
         .animation(.easeInOut(duration: 0.22), value: browser.popupWebView == nil)
-        .sheet(isPresented: $showAddToList) {
-            AddToListSheet(url: browser.addressText, title: browser.pageTitle)
+        .sheet(item: $pendingLink) { link in
+            AddToListSheet(url: link.url, title: link.title)
         }
     }
 
@@ -142,9 +151,11 @@ struct BrowserScreen: View {
                 .padding(.horizontal, 16)
             }
             if downloader.phase != .idle {
-                DownloadHUDView(phase: downloader.phase)
-                    .padding(.horizontal, 12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                DownloadHUDView(phase: downloader.phase) {
+                    downloader.cancelCurrent()
+                }
+                .padding(.horizontal, 12)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .padding(.bottom, 10)
@@ -166,7 +177,10 @@ struct BrowserScreen: View {
     @ViewBuilder private var addToListButton: some View {
         if !browser.pickerActive {
             Button {
-                showAddToList = true
+                Task {
+                    let link = await browser.focusedLink()
+                    pendingLink = PendingLink(url: link.url, title: link.title)
+                }
             } label: {
                 Image(systemName: "text.badge.plus")
                     .font(.system(size: 16, weight: .semibold))
@@ -244,6 +258,18 @@ struct HomeBackground: View {
 
 struct DownloadHUDView: View {
     let phase: Downloader.Phase
+    /// KÖK-İNDİRME-İPTAL: long-pressing the toast aborts the transfer. Optional
+    /// so previews and any other caller can drop the HUD in without a handler.
+    var onCancel: (() -> Void)? = nil
+
+    /// Only a live transfer can be cancelled; the done/failed toasts are just
+    /// receipts on their way out.
+    private var cancellable: Bool {
+        switch phase {
+        case .fetching, .saving, .uploading: return true
+        default: return false
+        }
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -251,12 +277,29 @@ struct DownloadHUDView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
                 if let detail { Text(detail).font(.system(size: 12)).foregroundStyle(.secondary) }
+                if cancellable {
+                    Text("Basılı tutup iptal et")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                }
             }
             Spacer(minLength: 0)
+            if cancellable {
+                Image(systemName: "xmark.circle")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .liquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .onLongPressGesture(minimumDuration: 0.45) {
+            guard cancellable else { return }
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+            onCancel?()
+        }
+        .accessibilityHint(cancellable ? "Basılı tutmak indirmeyi iptal eder" : "")
     }
 
     @ViewBuilder private var icon: some View {
